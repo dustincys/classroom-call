@@ -325,7 +325,7 @@ print(result)
 2 回答错误解释有逻辑/回答正确解释无逻辑
 3 回答正确解释有逻辑
 4 推翻已有结论并提出新观点
-c 取消本次点名
+c 取消本次提问
 
 评分: "
                  '(?0 ?1 ?2 ?3 ?4 ?c))))
@@ -572,7 +572,7 @@ c 取消本次点名
             (setq classroom-current-pool
                   (classroom-shuffle (append classroom-current-pool (list student))))
             (classroom-save-state)
-            (message "已取消点名，并重新随机"))
+            (message "已取消提问，并重新随机"))
         (progn
           (classroom-save-record student grade)
           (classroom-add-history student grade)
