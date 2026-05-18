@@ -11,36 +11,83 @@
   "Classroom random call system."
   :group 'applications)
 
+(defcustom classroom-directory
+  (if load-file-name
+      (file-name-directory load-file-name)
+    (file-name-directory (or buffer-file-name default-directory)))
+  "The directory where classroom-call.el resides.
+Used as base path for output files like charts and CSV exports."
+  :type 'directory
+  :group 'classroom-call)
+
 (defcustom classroom-org-file
-  "~/classroom-record.org"
-  "Org record file."
-  :type 'file)
+  (expand-file-name "classroom-record.org" classroom-directory)
+  "Org record file where all grades and roll calls are saved."
+  :type 'file
+  :group 'classroom-call)
 
 (defcustom classroom-state-file
-  "~/.emacs.d/classroom-state.el"
-  "Persistent state file."
-  :type 'file)
+  (expand-file-name "classroom-state.el" classroom-directory)
+  "Persistent state file (current round, pool, history)."
+  :type 'file
+  :group 'classroom-call)
+
+(defcustom classroom-default-students-file
+  (expand-file-name "students.csv" classroom-directory)
+  "Default CSV file to load student list from (can be changed interactively)."
+  :type 'file
+  :group 'classroom-call)
+
+(defcustom classroom-stats-image-file
+  (expand-file-name "classroom-stats.png" classroom-directory)
+  "Path where the statistics chart image will be saved."
+  :type 'file
+  :group 'classroom-call)
+
+(defcustom classroom-export-csv-default-file
+  (expand-file-name "classroom-grades.csv" classroom-directory)
+  "Default CSV file for exporting grades (can be overridden interactively)."
+  :type 'file
+  :group 'classroom-call)
+
+(defcustom classroom-tts-cache-dir
+  (expand-file-name "classroom-tts-cache/" classroom-directory)
+  "Directory to cache generated TTS audio files."
+  :type 'directory
+  :group 'classroom-call)
+
+(defcustom classroom-plot-script
+  (expand-file-name "classroom-plot.py" classroom-directory)
+  "Python script for generating grade distribution charts."
+  :type 'file
+  :group 'classroom-call)
 
 (defcustom classroom-enable-tts t
-  "Enable TTS (text-to-speech)."
-  :type 'boolean)
+  "Enable TTS (text-to-speech) during roll call."
+  :type 'boolean
+  :group 'classroom-call)
 
 (defcustom classroom-tts-voice
   "zh-CN-XiaoxiaoNeural"
-  "Edge TTS voice."
-  :type 'string)
+  "Edge TTS voice name."
+  :type 'string
+  :group 'classroom-call)
 
 (defcustom classroom-tts-rate
   "+50%"
-  "Speech rate."
-  :type 'string)
+  "Speech rate for TTS (e.g., '+0%' for normal, '+50%' for faster)."
+  :type 'string
+  :group 'classroom-call)
 
-(defcustom classroom-tts-cache-dir
-  "~/.emacs.d/classroom-tts-cache/"
-  "TTS cache directory."
-  :type 'directory)
+(defcustom classroom-tts-player-command
+  '("mpv" "--volume-max=150")
+  "Command list to play an audio file.
+The file path will be appended to this list.
+Example: (\"mpv\" \"--really-quiet\") or (\"ffplay\" \"-nodisp\" \"-autoexit\" \"-loglevel\" \"quiet\")"
+  :type '(repeat string)
+  :group 'classroom-call)
 
-;; create cache dir
+;; Ensure directories exist
 (unless (file-directory-p classroom-tts-cache-dir)
   (make-directory classroom-tts-cache-dir t))
 
@@ -49,13 +96,9 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defvar classroom-students nil)
-
 (defvar classroom-current-pool nil)
-
 (defvar classroom-history nil)
-
 (defvar classroom-round 1)
-
 (defvar classroom-last-cancelled-id nil)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -133,7 +176,10 @@ print(result)
 
 (defun classroom-load-csv (file)
   "Load students from CSV FILE."
-  (interactive "fCSV file: ")
+  (interactive (list (read-file-name "CSV file: "
+                                     (file-name-directory classroom-default-students-file)
+                                     nil nil
+                                     (file-name-nondirectory classroom-default-students-file))))
   (setq classroom-students nil)
   (with-temp-buffer
     (insert-file-contents file)
@@ -191,7 +237,6 @@ print(result)
                     (equal (plist-get candidate :id)
                            classroom-last-cancelled-id)))
       (setq candidate (pop classroom-current-pool))
-      ;; same as cancelled
       (when (and candidate
                  (equal (plist-get candidate :id)
                         classroom-last-cancelled-id))
@@ -322,45 +367,102 @@ c 取消本次点名
         classroom-history))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Statistics
+;; Statistics & Chart
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defun classroom-grade-distribution ()
-  "Grade distribution."
-  (let ((table (make-hash-table :test #'equal)))
-    ;; init
-    (dotimes (i 5) (puthash i 0 table))
-    ;; count
-    (dolist (x classroom-history)
-      (let ((grade (plist-get x :grade)))
-        (cond ((string= grade "无回答") (puthash 0 (1+ (gethash 0 table 0)) table))
-              ((string= grade "回答错误且解释无逻辑") (puthash 1 (1+ (gethash 1 table 0)) table))
-              ((string= grade "回答错误解释有逻辑/回答正确解释无逻辑") (puthash 2 (1+ (gethash 2 table 0)) table))
-              ((string= grade "回答正确解释有逻辑") (puthash 3 (1+ (gethash 3 table 0)) table))
-              ((string= grade "推翻已有结论并提出新观点") (puthash 4 (1+ (gethash 4 table 0)) table)))))
-    table))
+(defun classroom--generate-chart (class-data output-file)
+  "Generate chart using Python script and CLASS-DATA, save to OUTPUT-FILE."
+  (let* ((labels '("无回答" "回答错误且解释无逻辑"
+                   "回答错误解释有逻辑/回答正确解释无逻辑"
+                   "回答正确解释有逻辑"
+                   "推翻已有结论并提出新观点"))
+         (classes (mapcar #'car class-data))
+         (data (vconcat (mapcar (lambda (c) (vconcat (append (cdr c) nil))) class-data)))
+         (json-file (make-temp-file "classroom-data-" nil ".json"))
+         (json-str (json-encode `((labels . ,(vconcat labels))
+                                  (classes . ,(vconcat classes))
+                                  (data . ,data))))
+         (err-buf (get-buffer-create "*classroom-chart-debug*"))
+         ret)
+    (with-temp-file json-file
+      (insert json-str))
+    (setq ret (call-process "python3" nil (list err-buf t) nil
+                            classroom-plot-script
+                            json-file
+                            output-file))
+    (message "Python 脚本 stderr:\n%s" (with-current-buffer err-buf (buffer-string)))
+    (delete-file json-file)
+    (if (not (eq ret 0))
+        (error "图表生成失败，退出码 %d，查看 *classroom-chart-debug* 缓冲区" ret)
+      (message "图表已生成: %s" output-file))))
 
 (defun classroom-show-statistics ()
-  "Show classroom statistics."
+  "Show classroom statistics with per-class grade distribution chart."
   (interactive)
   (let* ((remaining (length classroom-current-pool))
          (answered (- (length classroom-students) remaining))
-         (dist (classroom-grade-distribution)))
-    (with-current-buffer (get-buffer-create "*Classroom Statistics*")
-      (erase-buffer)
-      (insert "课堂统计\n\n")
-      (insert (format "当前轮次：%d\n\n" classroom-round))
-      (insert (format "未回答人数：%d\n" remaining))
-      (insert (format "已回答人数：%d\n\n" answered))
-      (insert "成绩分布\n\n")
-      (dotimes (i 5)
-        (insert (format "%d : %s (%d)\n" i (make-string (gethash i dist 0) ?█) (gethash i dist 0))))
-      (insert "\n\n未回答学生\n\n")
-      (dolist (student classroom-current-pool)
-        (insert (classroom-student-line student))
-        (insert "\n"))
-      (goto-char (point-min))
-      (display-buffer (current-buffer)))))
+         (class-dist (make-hash-table :test 'equal))
+         classes)
+    ;; Aggregate per-class grades
+    (dolist (entry classroom-history)
+      (let* ((grade (plist-get entry :grade))
+             (group (or (plist-get entry :group) "未知班级"))
+             (vec (gethash group class-dist)))
+        (unless vec
+          (setq vec (make-vector 5 0))
+          (puthash group vec class-dist)
+          (push group classes))
+        (let ((idx (cond ((string= grade "无回答") 0)
+                         ((string= grade "回答错误且解释无逻辑") 1)
+                         ((string= grade "回答错误解释有逻辑/回答正确解释无逻辑") 2)
+                         ((string= grade "回答正确解释有逻辑") 3)
+                         ((string= grade "推翻已有结论并提出新观点") 4)
+                         (t -1))))
+          (unless (= idx -1)
+            (aset vec idx (1+ (aref vec idx)))))))
+    (setq classes (sort classes #'string<))
+    (let* ((chart-file classroom-stats-image-file)
+           (class-data (mapcar (lambda (c) (cons c (gethash c class-dist))) classes)))
+      ;; Generate chart
+      (condition-case err
+          (classroom--generate-chart class-data chart-file)
+        (error (message "无法生成图表：%s" (error-message-string err))
+               (setq chart-file nil)))
+      ;; Prepare Org buffer
+      (with-current-buffer (get-buffer-create "*Classroom Statistics*")
+        (let ((inhibit-read-only t))
+          (erase-buffer)
+          (org-mode)
+          (insert (format "* 课堂统计（第 %d 轮）\n\n" classroom-round))
+          (insert (format "- 未回答人数：%d\n" remaining))
+          (insert (format "- 已回答人数：%d\n\n" answered))
+          (if (and chart-file (file-exists-p chart-file))
+              (insert "** 成绩分布图\n\n"
+                      (format "[[file:%s]]\n\n" chart-file))
+            (insert "** 成绩分布（图表生成失败）\n\n"))
+          (insert "** 无回答学生\n\n")
+          (let ((no-answer-students (make-hash-table :test 'equal)))
+            (dolist (entry classroom-history)
+              (when (string= (plist-get entry :grade) "无回答")
+                (let ((id (plist-get entry :id))
+                      (name (plist-get entry :name))
+                      (group (plist-get entry :group))
+                      (pinyin (plist-get entry :pinyin)))
+                  (unless (gethash id no-answer-students)
+                    (puthash id (format "%s (%s) [%s] <%s>" name pinyin id group) no-answer-students)))))
+            (if (hash-table-empty-p no-answer-students)
+                (insert "无\n")
+              (maphash (lambda (_id line)
+                         (insert "- " line "\n"))
+                       no-answer-students)))
+          (goto-char (point-min))))
+      (pop-to-buffer "*Classroom Statistics*")
+      ;; Display inline image after buffer is ready
+      (when (and chart-file (file-exists-p chart-file))
+        (run-with-idle-timer 0.1 nil
+                             (lambda ()
+                               (with-current-buffer "*Classroom Statistics*"
+                                 (org-display-inline-images t t))))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; TTS (Edge-TTS + Cache)
@@ -387,13 +489,16 @@ c 取消本次点名
     file))
 
 (defun classroom-play-tts (file)
-  "Play TTS FILE."
+  "Play TTS FILE using customizable player command."
   (when (file-exists-p file)
-    ;; stop previous player
+    ;; Stop any previous player (optional, can be customized per player)
     (ignore-errors
-      (call-process "pkill" nil nil nil "-f" "mpv.*classroom-tts-cache"))
-    ;; play
-    (start-process "classroom-tts-player" nil "mpv" "--really-quiet" file)))
+      (kill-process "classroom-tts-player"))
+    ;; Start new player
+    (apply #'start-process
+           "classroom-tts-player"
+           nil
+           (append classroom-tts-player-command (list file)))))
 
 (defun classroom-speak (text)
   "Speak TEXT using cached TTS."
@@ -406,14 +511,14 @@ c 取消本次点名
   (unless classroom-students
     (user-error "No students loaded"))
   (message "开始预生成 TTS 缓存...")
-  ;; generic sentences (for grade feedback)
+  ;; generic grade sentences
   (dolist (text '("无回答"
                   "回答错误且解释无逻辑"
                   "回答错误解释有逻辑或回答正确解释无逻辑"
                   "回答正确解释有逻辑"
                   "推翻已有结论并提出新观点"))
     (classroom-generate-tts text))
-  ;; all students
+  ;; each student call sentence
   (dolist (student classroom-students)
     (let ((name (plist-get student :name)))
       (classroom-generate-tts (format "请 %s 回答问题" name))))
@@ -437,12 +542,12 @@ c 取消本次点名
   "Speak STUDENT name for calling."
   (classroom-speak (format "请 %s 回答问题" (plist-get student :name))))
 
-(defun classroom-speak-grade (student grade)
-  "Speak feedback based on GRADE. 直接播报成绩等级描述。"
-  (classroom-speak grade))  ; 只播报等级文本，不附加名字
+(defun classroom-speak-grade (_student grade)
+  "Speak GRADE text only (without student name)."
+  (classroom-speak grade))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Main Flow (with TTS integration)
+;; Main Flow
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defun classroom-call ()
@@ -457,15 +562,10 @@ c 取消本次点名
   ;; actual student
   (let* ((student (classroom-next-student))
          (display (classroom-format-student student)))
-    ;; reset cancel flag
     (setq classroom-last-cancelled-id nil)
-    ;; show
     (classroom-render (format ">>> %s <<<" display))
-    ;; speak student name
     (classroom-speak-current-student student)
-    ;; grading
     (let ((grade (classroom-grade-student)))
-      ;; cancel
       (if (eq grade 'cancel)
           (progn
             (setq classroom-last-cancelled-id (plist-get student :id))
@@ -473,16 +573,15 @@ c 取消本次点名
                   (classroom-shuffle (append classroom-current-pool (list student))))
             (classroom-save-state)
             (message "已取消点名，并重新随机"))
-        ;; normal
         (progn
           (classroom-save-record student grade)
           (classroom-add-history student grade)
           (classroom-save-state)
-          (classroom-speak-grade student grade)  ; 直接播报成绩描述
+          (classroom-speak-grade student grade)
           (message "%s -> %s" display grade))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Start
+;; Start / Resume
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defun classroom-start ()
@@ -501,7 +600,6 @@ c 取消本次点名
   (switch-to-buffer (classroom-buffer))
   (classroom-mode 1)
   (message "课堂系统已启动")
-  ;; start TTS cache preheat in background
   (classroom-preheat-tts))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -521,7 +619,7 @@ c 取消本次点名
     (display-buffer (current-buffer))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Keymap
+;; Keymap & Mode
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defvar classroom-mode-map
@@ -529,7 +627,6 @@ c 取消本次点名
     (define-key map (kbd "c") #'classroom-call)
     (define-key map (kbd "s") #'classroom-show-statistics)
     (define-key map (kbd "p") #'classroom-show-pool)
-    ;; TTS management
     (define-key map (kbd "t") #'classroom-precache-tts)
     (define-key map (kbd "T") #'classroom-preheat-tts)
     (define-key map (kbd "C") #'classroom-clear-tts-cache)
@@ -540,61 +637,61 @@ c 取消本次点名
   :lighter " Classroom"
   :keymap classroom-mode-map)
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; CSV Export
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
 (defun classroom-export-csv (&optional output-file)
-  "将 `classroom-record.org` 中的课堂记录导出为 CSV 表格。
-列顺序：姓名, 学号, 班级, Round1, Round2, ...
-成绩用数字 0-4 表示（0=无回答，1=错无逻辑，2=错有逻辑/对无逻辑，3=对有逻辑，4=新观点）。
-如果未提供 OUTPUT-FILE，则导出到桌面 classroom-grades.csv。"
-  (interactive (list (read-file-name "导出 CSV 到: " "~/Desktop/" nil nil "classroom-grades.csv")))
+  "Export grades from `classroom-org-file' to CSV.
+Columns: 姓名,学号,班级,Round1,Round2,... with numeric grades 0-4.
+If OUTPUT-FILE is not provided, use `classroom-export-csv-default-file'."
+  (interactive (list (read-file-name "导出 CSV 到: "
+                                     (file-name-directory classroom-export-csv-default-file)
+                                     nil nil
+                                     (file-name-nondirectory classroom-export-csv-default-file))))
+  (unless output-file
+    (setq output-file classroom-export-csv-default-file))
   (let* ((org-file (expand-file-name classroom-org-file))
          (records nil)
          (student-ids nil)
          (max-round 0)
-         ;; 文字 → 数字映射表（从 classroom-score-levels 生成）
          (grade-to-number
           (let ((ht (make-hash-table :test 'equal)))
             (dolist (pair classroom-score-levels)
               (puthash (cdr pair) (string-to-number (car pair)) ht))
             ht)))
-    ;; 1. 解析 Org 文件
-    (if (not (file-exists-p org-file))
-        (error "记录文件 %s 不存在" org-file)
-      (with-temp-buffer
-        (insert-file-contents org-file)
-        (org-mode)
-        (org-element-map (org-element-parse-buffer) 'headline
-          (lambda (hl)
-            (when (string-match "第\\([0-9]+\\)轮" (org-element-property :raw-value hl))
-              (let* ((round (string-to-number (match-string 1 (org-element-property :raw-value hl))))
-                     (id (org-element-property :ID hl))
-                     (name (org-element-property :NAME hl))
-                     (group (org-element-property :GROUP hl))
-                     (grade-text (org-element-property :GRADE hl)))
-                (when (and id name group grade-text)
-                  (let ((grade-num (gethash grade-text grade-to-number)))
-                    (when grade-num
-                      (push (list :id id :name name :group group :round round :grade grade-num) records)
-                      (setq max-round (max max-round round))
-                      (unless (member id student-ids)
-                        (push id student-ids)))))))))))
-
-    ;; 2. 构建学生信息表
+    (unless (file-exists-p org-file)
+      (error "记录文件 %s 不存在" org-file))
+    ;; Parse Org
+    (with-temp-buffer
+      (insert-file-contents org-file)
+      (org-mode)
+      (org-element-map (org-element-parse-buffer) 'headline
+        (lambda (hl)
+          (when (string-match "第\\([0-9]+\\)轮" (org-element-property :raw-value hl))
+            (let* ((round (string-to-number (match-string 1 (org-element-property :raw-value hl))))
+                   (id (org-element-property :ID hl))
+                   (name (org-element-property :NAME hl))
+                   (group (org-element-property :GROUP hl))
+                   (grade-text (org-element-property :GRADE hl)))
+              (when (and id name group grade-text)
+                (let ((grade-num (gethash grade-text grade-to-number)))
+                  (when grade-num
+                    (push (list :id id :name name :group group :round round :grade grade-num) records)
+                    (setq max-round (max max-round round))
+                    (unless (member id student-ids)
+                      (push id student-ids))))))))))
+    ;; Build output
     (let ((students-info (make-hash-table :test 'equal)))
       (dolist (r records)
         (puthash (plist-get r :id)
                  (list :name (plist-get r :name) :group (plist-get r :group))
                  students-info))
       (setq student-ids (sort student-ids #'string<))
-
-      ;; 3. 生成 CSV
       (with-temp-buffer
-        ;; 表头
         (insert "姓名,学号,班级")
-        (dotimes (i max-round)
-          (insert (format ",Round%d" (1+ i))))
+        (dotimes (i max-round) (insert (format ",Round%d" (1+ i))))
         (insert "\n")
-
-        ;; 逐行
         (dolist (id student-ids)
           (let* ((info (gethash id students-info))
                  (name (plist-get info :name))
@@ -608,17 +705,13 @@ c 取消本次点名
               (let ((round-num (1+ i)))
                 (insert (format ",%s" (or (gethash round-num grades-by-round) "")))))
             (insert "\n")))
-
-        ;; 4. 写入文件并打开
         (write-region (point-min) (point-max) output-file nil 'silent)
         (message "CSV 已导出到 %s" output-file)
         (find-file output-file)))))
-
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Provide
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (provide 'classroom-call)
-
 ;;; classroom-call.el ends here
