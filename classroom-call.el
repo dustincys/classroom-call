@@ -80,7 +80,7 @@ Used as base path for output files like charts and CSV exports."
   :group 'classroom-call)
 
 (defcustom classroom-tts-player-command
-  '("mpv" "--volume-max=150")
+  '("mpv" "--volume-max=200")
   "Command list to play an audio file.
 The file path will be appended to this list.
 Example: (\"mpv\" \"--really-quiet\") or (\"ffplay\" \"-nodisp\" \"-autoexit\" \"-loglevel\" \"quiet\")"
@@ -100,6 +100,9 @@ Example: (\"mpv\" \"--really-quiet\") or (\"ffplay\" \"-nodisp\" \"-autoexit\" \
 (defvar classroom-history nil)
 (defvar classroom-round 1)
 (defvar classroom-last-cancelled-id nil)
+(defvar classroom-no-answer-counts nil)       ; alist: (id . count)
+(defvar classroom-unanswered-pool nil         ; list of plists
+  "Students who have no-answer < 3 times and are postponed to next session.")
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Random Seed
@@ -113,9 +116,9 @@ Example: (\"mpv\" \"--really-quiet\") or (\"ffplay\" \"-nodisp\" \"-autoexit\" \
 
 (defconst classroom-score-levels
   '(("0" . "无回答")
-    ("1" . "回答错误且解释无逻辑")
-    ("2" . "回答错误解释有逻辑/回答正确解释无逻辑")
-    ("3" . "回答正确解释有逻辑")
+    ("1" . "回答错误且无解释或解释无逻辑")
+    ("2" . "回答正确，但无解释或解释无逻辑")
+    ("3" . "回答正确解释有逻辑，或回答错误但解释很有逻辑")
     ("4" . "推翻已有结论并提出新观点")))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -127,9 +130,7 @@ Example: (\"mpv\" \"--really-quiet\") or (\"ffplay\" \"-nodisp\" \"-autoexit\" \
   (with-temp-buffer
     (call-process
      "python3"
-     nil
-     t
-     nil
+     nil t nil
      "-c"
      "
 from pypinyin import lazy_pinyin, Style
@@ -218,18 +219,20 @@ print(result)
     (append vec nil)))
 
 (defun classroom-reset-pool ()
-  "Reset pool."
+  "Reset pool for a new round."
+  (setq classroom-no-answer-counts nil)
+  ;; Do NOT clear classroom-unanswered-pool here – it persists across sessions.
   (setq classroom-current-pool
         (classroom-shuffle classroom-students)))
 
 (defun classroom-next-student ()
-  "Get next student."
-  ;; next round
+  "Get next student, starting a new round if needed."
+  ;; If pool empty, advance round and reset
   (when (null classroom-current-pool)
     (setq classroom-round (1+ classroom-round))
     (classroom-reset-pool)
     (message "=== 第 %d 轮开始 ===" classroom-round))
-  ;; avoid immediate repeat
+  ;; Avoid immediate repeat of a cancelled student
   (let ((candidate nil)
         (attempts 0))
     (while (and (< attempts 20)
@@ -240,7 +243,7 @@ print(result)
       (when (and candidate
                  (equal (plist-get candidate :id)
                         classroom-last-cancelled-id))
-        ;; reshuffle
+        ;; put back and reshuffle
         (setq classroom-current-pool
               (classroom-shuffle
                (append classroom-current-pool (list candidate))))
@@ -264,14 +267,24 @@ print(result)
     (insert "\n\n")
     (prin1 `(setq classroom-students ',classroom-students) (current-buffer))
     (insert "\n\n")
-    (prin1 `(setq classroom-last-cancelled-id ',classroom-last-cancelled-id) (current-buffer))))
+    (prin1 `(setq classroom-last-cancelled-id ',classroom-last-cancelled-id) (current-buffer))
+    (insert "\n\n")
+    (prin1 `(setq classroom-no-answer-counts ',classroom-no-answer-counts) (current-buffer))
+    (insert "\n\n")
+    (prin1 `(setq classroom-unanswered-pool ',classroom-unanswered-pool) (current-buffer))))
 
 (defun classroom-load-state ()
-  "Load persistent state."
+  "Load persistent state, merging unanswered students back into pool."
   (interactive)
   (if (file-exists-p classroom-state-file)
       (progn
         (load-file classroom-state-file)
+        ;; Put postponed students back into the draw pool
+        (when classroom-unanswered-pool
+          (setq classroom-current-pool
+                (classroom-shuffle (append classroom-current-pool classroom-unanswered-pool)))
+          (message "已将 %d 名挂起学生放回点名池" (length classroom-unanswered-pool))
+          (setq classroom-unanswered-pool nil))  ; clear after merging
         (message "课堂状态已恢复"))
     (message "未发现课堂状态文件")))
 
@@ -309,7 +322,6 @@ print(result)
     (let* ((student (nth (random (length classroom-students)) classroom-students))
            (display (classroom-format-student student)))
       (classroom-render display)
-      ;; gradually slower
       (sit-for (+ 0.015 (* i 0.005))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -321,9 +333,9 @@ print(result)
   (let ((choice (read-char-choice
                  "
 0 无回答
-1 回答错误且解释无逻辑
-2 回答错误解释有逻辑/回答正确解释无逻辑
-3 回答正确解释有逻辑
+1 回答错误且无解释或解释无逻辑
+2 回答正确，但无解释或解释无逻辑
+3 回答正确解释有逻辑，或回答错误但解释很有逻辑
 4 推翻已有结论并提出新观点
 c 取消本次提问
 
@@ -372,9 +384,11 @@ c 取消本次提问
 
 (defun classroom--generate-chart (class-data output-file)
   "Generate chart using Python script and CLASS-DATA, save to OUTPUT-FILE."
-  (let* ((labels '("无回答" "回答错误且解释无逻辑"
-                   "回答错误解释有逻辑/回答正确解释无逻辑"
-                   "回答正确解释有逻辑"
+  (let* ((labels '(
+                   "无回答"
+                   "回答错误且无解释或解释无逻辑"
+                   "回答正确，但无解释或解释无逻辑"
+                   "回答正确解释有逻辑，或回答错误但解释很有逻辑"
                    "推翻已有结论并提出新观点"))
          (classes (mapcar #'car class-data))
          (data (vconcat (mapcar (lambda (c) (vconcat (append (cdr c) nil))) class-data)))
@@ -413,9 +427,9 @@ c 取消本次提问
           (puthash group vec class-dist)
           (push group classes))
         (let ((idx (cond ((string= grade "无回答") 0)
-                         ((string= grade "回答错误且解释无逻辑") 1)
-                         ((string= grade "回答错误解释有逻辑/回答正确解释无逻辑") 2)
-                         ((string= grade "回答正确解释有逻辑") 3)
+                         ((string= grade "回答错误且无解释或解释无逻辑") 1)
+                         ((string= grade "回答正确，但无解释或解释无逻辑") 2)
+                         ((string= grade "回答正确解释有逻辑，或回答错误但解释很有逻辑") 3)
                          ((string= grade "推翻已有结论并提出新观点") 4)
                          (t -1))))
           (unless (= idx -1)
@@ -434,28 +448,20 @@ c 取消本次提问
           (erase-buffer)
           (org-mode)
           (insert (format "* 课堂统计（第 %d 轮）\n\n" classroom-round))
-          (insert (format "- 未回答人数：%d\n" remaining))
+          (insert (format "- 剩余人数：%d\n" remaining))
           (insert (format "- 已回答人数：%d\n\n" answered))
           (if (and chart-file (file-exists-p chart-file))
               (insert "** 成绩分布图\n\n"
                       (format "[[file:%s]]\n\n" chart-file))
             (insert "** 成绩分布（图表生成失败）\n\n"))
-          (insert "** 无回答学生\n\n")
-          (let ((no-answer-students (make-hash-table :test 'equal)))
-            (dolist (entry classroom-history)
-              (when (string= (plist-get entry :grade) "无回答")
-                (let ((id (plist-get entry :id))
-                      (name (plist-get entry :name))
-                      (group (plist-get entry :group))
-                      (pinyin (plist-get entry :pinyin)))
-                  (unless (gethash id no-answer-students)
-                    (puthash id (format "%s (%s) [%s] <%s>" name pinyin id group) no-answer-students)))))
-            (if (hash-table-empty-p no-answer-students)
-                (insert "无\n")
-              (maphash (lambda (_id line)
-                         (insert "- " line "\n"))
-                       no-answer-students)))
-          (goto-char (point-min))))
+
+          ;; 当前挂起的无回答学生（来自 classroom-unanswered-pool）
+          (insert "** 当前无回答（挂起）学生\n\n")
+          (if (null classroom-unanswered-pool)
+              (insert "无\n")
+            (dolist (student classroom-unanswered-pool)
+              (insert "- " (classroom-student-line student) "\n"))))
+        (goto-char (point-min)))
       (pop-to-buffer "*Classroom Statistics*")
       ;; Display inline image after buffer is ready
       (when (and chart-file (file-exists-p chart-file))
@@ -491,10 +497,8 @@ c 取消本次提问
 (defun classroom-play-tts (file)
   "Play TTS FILE using customizable player command."
   (when (file-exists-p file)
-    ;; Stop any previous player (optional, can be customized per player)
     (ignore-errors
       (kill-process "classroom-tts-player"))
-    ;; Start new player
     (apply #'start-process
            "classroom-tts-player"
            nil
@@ -511,14 +515,13 @@ c 取消本次提问
   (unless classroom-students
     (user-error "No students loaded"))
   (message "开始预生成 TTS 缓存...")
-  ;; generic grade sentences
-  (dolist (text '("无回答"
-                  "回答错误且解释无逻辑"
-                  "回答错误解释有逻辑或回答正确解释无逻辑"
-                  "回答正确解释有逻辑"
+  (dolist (text '(
+                  "无回答"
+                  "回答错误且无解释或解释无逻辑"
+                  "回答正确，但无解释或解释无逻辑"
+                  "回答正确解释有逻辑，或回答错误但解释很有逻辑"
                   "推翻已有结论并提出新观点"))
     (classroom-generate-tts text))
-  ;; each student call sentence
   (dolist (student classroom-students)
     (let ((name (plist-get student :name)))
       (classroom-generate-tts (format "请 %s 回答问题" name))))
@@ -542,7 +545,7 @@ c 取消本次提问
   "Speak STUDENT name for calling."
   (classroom-speak (format "请 %s 回答问题" (plist-get student :name))))
 
-(defun classroom-speak-grade (_student grade)
+(defun classroom-speak-grade (grade)
   "Speak GRADE text only (without student name)."
   (classroom-speak grade))
 
@@ -566,19 +569,42 @@ c 取消本次提问
     (classroom-render (format ">>> %s <<<" display))
     (classroom-speak-current-student student)
     (let ((grade (classroom-grade-student)))
-      (if (eq grade 'cancel)
-          (progn
-            (setq classroom-last-cancelled-id (plist-get student :id))
-            (setq classroom-current-pool
-                  (classroom-shuffle (append classroom-current-pool (list student))))
-            (classroom-save-state)
-            (message "已取消提问，并重新随机"))
-        (progn
-          (classroom-save-record student grade)
-          (classroom-add-history student grade)
-          (classroom-save-state)
-          (classroom-speak-grade student grade)
-          (message "%s -> %s" display grade))))))
+      (cond
+       ((eq grade 'cancel)
+        ;; Put back and avoid immediate repeat
+        (setq classroom-last-cancelled-id (plist-get student :id))
+        (setq classroom-current-pool
+              (classroom-shuffle (append classroom-current-pool (list student))))
+        (classroom-save-state)
+        (message "已取消提问，并重新随机"))
+
+       (t
+        (classroom-save-record student grade)
+        (classroom-add-history student grade)
+        (let ((id (plist-get student :id)))
+          ;; Always remove from unanswered pool (in case they had been postponed before)
+          (setq classroom-unanswered-pool
+                (cl-remove-if (lambda (s) (equal (plist-get s :id) id))
+                              classroom-unanswered-pool))
+
+          (if (string= grade "无回答")
+              ;; Handle no-answer with retry count
+              (let ((count (1+ (alist-get id classroom-no-answer-counts 0 nil #'equal))))
+                (setf (alist-get id classroom-no-answer-counts nil nil #'equal) count)
+                (if (< count 3)
+                    ;; First or second no-answer: postpone to next session
+                    (progn
+                      (push student classroom-unanswered-pool)
+                      (message "%s -> %s (第 %d 次无回答，已挂起，下次启动时放回)"
+                               (classroom-student-line student) grade count))
+                  ;; Third no-answer: permanently remove from pool
+                  (message "%s -> %s (第 3 次无回答，已移出本轮点名池)"
+                           (classroom-student-line student) grade)))
+            ;; Valid answer (1-4)
+            (message "%s -> %s" (classroom-student-line student) grade)))
+
+        (classroom-save-state)
+        (classroom-speak-grade grade))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Start / Resume
@@ -594,6 +620,8 @@ c 取消本次提问
       (setq classroom-round 1)
       (setq classroom-history nil)
       (setq classroom-last-cancelled-id nil)
+      (setq classroom-no-answer-counts nil)
+      (setq classroom-unanswered-pool nil)   ; fresh start
       (call-interactively #'classroom-load-csv)
       (classroom-save-state)))
   (delete-other-windows)
