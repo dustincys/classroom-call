@@ -331,8 +331,7 @@ print(result)
 (defun classroom-grade-student ()
   "Grade student."
   (let ((choice (read-char-choice
-                 "
-0 无回答
+                 "0 无回答
 1 回答错误且无解释或解释无逻辑
 2 回答正确，但无解释或解释无逻辑
 3 回答正确解释有逻辑，或回答错误但解释很有逻辑
