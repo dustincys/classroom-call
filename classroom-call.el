@@ -62,6 +62,12 @@ Used as base path for output files like charts and CSV exports."
   :type 'file
   :group 'classroom-call)
 
+(defcustom classroom-python-path
+  "python3"
+  "Path to the Python interpreter."
+  :type 'string
+  :group 'classroom-call)
+
 (defcustom classroom-enable-tts t
   "Enable TTS (text-to-speech) during roll call."
   :type 'boolean
@@ -129,7 +135,7 @@ Example: (\"mpv\" \"--really-quiet\") or (\"ffplay\" \"-nodisp\" \"-autoexit\" \
   "Convert Chinese NAME to pinyin with tones."
   (with-temp-buffer
     (call-process
-     "python3"
+     classroom-python-path
      nil t nil
      "-c"
      "
@@ -401,7 +407,7 @@ c 取消本次提问
          ret)
     (with-temp-file json-file
       (insert json-str))
-    (setq ret (call-process "python3" nil (list err-buf t) nil
+    (setq ret (call-process classroom-python-path nil (list err-buf t) nil
                             classroom-plot-script
                             json-file
                             output-file))
