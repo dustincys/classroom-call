@@ -513,20 +513,24 @@ Returns immediately; the menu is never blocked on TTS generation."
           ;; Already cached: play immediately (start-process is async)
           (classroom-play-tts file)
         ;; Not cached: generate in background, then play when ready
-        (message "正在生成语音: %s" text)
-        (let ((proc (make-process
-                     :name "classroom-tts-gen"
-                     :buffer (get-buffer-create "*TTS-log*")
-                     :command (list "edge-tts"
-                                    "--voice" classroom-tts-voice
-                                    (format "--rate=%s" classroom-tts-rate)
-                                    "--text" text
-                                    "--write-media" file)
-                     :sentinel (lambda (p _event)
-                                 (if (= (process-exit-status p) 0)
-                                     (classroom-play-tts file)
-                                   (message "TTS 生成失败，查看 *TTS-log*"))))))
-          (set-process-query-on-exit-flag proc nil))))))
+        (progn
+          (message "正在生成语音: %s" text)
+          ;; Kill any stale generation process to avoid name conflict
+          (ignore-errors
+            (kill-process "classroom-tts-gen"))
+          (let ((proc (make-process
+                       :name "classroom-tts-gen"
+                       :buffer (get-buffer-create "*TTS-log*")
+                       :command (list "edge-tts"
+                                      "--voice" classroom-tts-voice
+                                      (format "--rate=%s" classroom-tts-rate)
+                                      "--text" text
+                                      "--write-media" file)
+                       :sentinel (lambda (p _event)
+                                   (if (= (process-exit-status p) 0)
+                                       (classroom-play-tts file)
+                                     (message "TTS 生成失败，查看 *TTS-log*"))))))
+            (set-process-query-on-exit-flag proc nil)))))))
 
 (defun classroom-precache-tts ()
   "Pre-generate all classroom TTS."
