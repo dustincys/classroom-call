@@ -309,7 +309,8 @@ print(result)
       (goto-char (point-min))
       (center-region (point-min) (point-max))
       (special-mode)))
-  (switch-to-buffer (classroom-buffer)))
+  (switch-to-buffer (classroom-buffer))
+  (redisplay))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Rolling Animation
