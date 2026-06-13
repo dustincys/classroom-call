@@ -495,14 +495,15 @@ c 取消本次提问
     file))
 
 (defun classroom-play-tts (file)
-  "Play TTS FILE using customizable player command."
+  "Play TTS FILE using customizable player command.
+Errors are suppressed so audio playback failure never blocks the grading menu."
   (when (file-exists-p file)
     (ignore-errors
-      (kill-process "classroom-tts-player"))
-    (apply #'start-process
-           "classroom-tts-player"
-           nil
-           (append classroom-tts-player-command (list file)))))
+      (kill-process "classroom-tts-player")
+      (apply #'start-process
+             "classroom-tts-player"
+             nil
+             (append classroom-tts-player-command (list file))))))
 
 (defun classroom-speak (text)
   "Speak TEXT using cached TTS, generating asynchronously if not cached.
