@@ -1,0 +1,136 @@
+* my-classroom — Spacemacs Layer for classroom-call
+
+A Spacemacs private layer that integrates [[https://github.com/dustincys/classroom-call.el][classroom-call]], a
+classroom random call system with TTS voice announcements.
+
+The package is fetched automatically from GitHub — no manual clone needed.
+
+* Features
+- Random student selection with rolling animation
+- TTS voice announcements via Microsoft Edge TTS
+- Five-level grading rubric (0–4)
+- Org mode records for all calls and grades
+- Statistics charts per class (matplotlib)
+- CSV export for spreadsheet analysis
+- Persistent state across Emacs restarts
+
+* Prerequisites
+
+| Dependency      | Purpose                | Install                                  |
+|-----------------+------------------------+------------------------------------------|
+| Python 3        | Pinyin & charts        | ~apt install python3~                    |
+| pypinyin        | Chinese → pinyin       | ~pip3 install pypinyin~                  |
+| matplotlib      | Statistics charts      | ~pip3 install matplotlib numpy~          |
+| edge-tts        | TTS voice synthesis    | ~pip3 install edge-tts~                  |
+| mpv or ffplay   | Audio playback         | ~apt install mpv~                        |
+
+*TTS is optional.* Set ~classroom-enable-tts~ to ~nil~ if you don't need voice.
+
+* Installation
+
+** 1. Add the layer to your Spacemacs config
+
+Copy or symlink this layer into your Spacemacs private layers directory:
+
+#+begin_src sh
+  ln -s ~/github/classroom-call/spacemacs-layer/my-classroom \
+        ~/.spacemacs.d/layers/my-classroom
+#+end_src
+
+** 2. Add my-classroom to dotspacemacs-configuration-layers
+
+In your ~~/.spacemacs~:
+
+#+begin_src elisp
+  (setq-default dotspacemacs-configuration-layers
+    '(
+      ;; ... your other layers ...
+      my-classroom
+     ))
+#+end_src
+
+The package will be downloaded automatically from GitHub on first start.
+
+* Customization
+
+All ~defcustom~ variables from ~classroom-call~ are initialized by this layer.
+
+| Variable                               | Default                              | Description                          |
+|----------------------------------------+--------------------------------------+--------------------------------------|
+| ~classroom-directory~                  | Package install dir                  | Base directory for data files        |
+| ~classroom-org-file~                   | ~classroom-record.org~               | Org file for grades & roll calls     |
+| ~classroom-state-file~                 | ~classroom-state.el~                 | Persistent state file                |
+| ~classroom-default-students-file~      | ~students.csv~                       | Default CSV student list             |
+| ~classroom-stats-image-file~           | ~classroom-stats.png~                | Statistics chart image path          |
+| ~classroom-export-csv-default-file~    | ~classroom-grades.csv~               | Default CSV export path              |
+| ~classroom-tts-cache-dir~              | ~classroom-tts-cache/~               | TTS audio cache directory            |
+| ~classroom-plot-script~                | ~classroom-plot.py~                  | Python chart script path             |
+| ~classroom-python-path~                | ~"python3"~                          | Python interpreter path              |
+| ~classroom-enable-tts~                 | ~t~                                  | Enable TTS voice                     |
+| ~classroom-tts-voice~                  | ~"zh-CN-XiaoxiaoNeural"~             | Edge TTS voice name                  |
+| ~classroom-tts-rate~                   | ~"+50%"~                             | Speech rate                          |
+| ~classroom-tts-player-command~         | ~'("mpv" "--volume-max=200")~        | Audio player command                 |
+
+Override any variable via layer variables or ~:variables~ in
+~dotspacemacs-configuration-layers~:
+
+#+begin_src elisp
+  (my-classroom :variables
+                classroom-enable-tts nil
+                classroom-tts-voice "en-US-AriaNeural"
+                classroom-python-path "/usr/local/bin/python3")
+#+end_src
+
+* Usage
+
+** Global keybindings (anywhere)
+
+~SPC a c~ prefix:
+
+| Key binding | Command                     | Description                              |
+|-------------+-----------------------------+------------------------------------------|
+| ~SPC a c s~ | ~classroom-start~           | Start / resume the classroom system      |
+| ~SPC a c c~ | ~classroom-call~            | Call on a random student                 |
+| ~SPC a c p~ | ~classroom-show-pool~       | Show remaining students in the pool      |
+| ~SPC a c S~ | ~classroom-show-statistics~ | Show statistics and grade chart          |
+| ~SPC a c t~ | ~classroom-precache-tts~    | Pre-generate all TTS audio caches        |
+| ~SPC a c T~ | ~classroom-preheat-tts~     | Background TTS cache warm-up             |
+| ~SPC a c C~ | ~classroom-clear-tts-cache~ | Clear TTS cache directory                |
+| ~SPC a c l~ | ~classroom-load-csv~        | Reload student roster from CSV           |
+| ~SPC a c e~ | ~classroom-export-csv~      | Export grades to CSV                     |
+| ~SPC a c r~ | ~classroom-load-state~      | Manually restore classroom state         |
+
+** classroom-mode local keybindings
+
+Once inside the *Classroom Call* buffer, ~classroom-mode~ provides
+single-key shortcuts (no leader prefix needed):
+
+| Key | Command                     |
+|-----+-----------------------------|
+| ~c~ | ~classroom-call~            |
+| ~s~ | ~classroom-show-statistics~ |
+| ~p~ | ~classroom-show-pool~       |
+| ~t~ | ~classroom-precache-tts~    |
+| ~T~ | ~classroom-preheat-tts~     |
+| ~C~ | ~classroom-clear-tts-cache~ |
+
+* Quick Start
+
+1. Prepare a CSV student roster (~students.csv~):
+
+#+begin_src csv
+  id,name,group
+  20250001,James Anderson,1班
+  20250002,Emma Williams,1班
+  20250003,Michael Chen,2班
+#+end_src
+
+2. Press ~SPC a c s~ to start.
+
+3. Press ~SPC a c c~ (or just ~c~ in the classroom buffer) to call on a student.
+
+4. Grade with ~0~–~4~, or ~c~ to cancel.
+
+* License
+
+GPL-3.0
