@@ -341,6 +341,7 @@ c 取消本次提问
 
 评分: "
                  '(?0 ?1 ?2 ?3 ?4 ?c))))
+    (redisplay)
     (cond ((eq choice ?c) 'cancel)
           (t (assoc-default (char-to-string choice) classroom-score-levels)))))
 
@@ -499,7 +500,8 @@ c 取消本次提问
 Errors are suppressed so audio playback failure never blocks the grading menu."
   (when (file-exists-p file)
     (ignore-errors
-      (kill-process "classroom-tts-player")
+      (kill-process "classroom-tts-player"))
+    (ignore-errors
       (apply #'start-process
              "classroom-tts-player"
              nil
