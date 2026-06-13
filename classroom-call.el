@@ -505,9 +505,28 @@ c 取消本次提问
            (append classroom-tts-player-command (list file)))))
 
 (defun classroom-speak (text)
-  "Speak TEXT using cached TTS."
+  "Speak TEXT using cached TTS, generating asynchronously if not cached.
+Returns immediately; the menu is never blocked on TTS generation."
   (when classroom-enable-tts
-    (classroom-play-tts (classroom-generate-tts text))))
+    (let ((file (classroom-tts-file text)))
+      (if (file-exists-p file)
+          ;; Already cached: play immediately (start-process is async)
+          (classroom-play-tts file)
+        ;; Not cached: generate in background, then play when ready
+        (message "正在生成语音: %s" text)
+        (let ((proc (make-process
+                     :name "classroom-tts-gen"
+                     :buffer (get-buffer-create "*TTS-log*")
+                     :command (list "edge-tts"
+                                    "--voice" classroom-tts-voice
+                                    (format "--rate=%s" classroom-tts-rate)
+                                    "--text" text
+                                    "--write-media" file)
+                     :sentinel (lambda (p _event)
+                                 (if (= (process-exit-status p) 0)
+                                     (classroom-play-tts file)
+                                   (message "TTS 生成失败，查看 *TTS-log*"))))))
+          (set-process-query-on-exit-flag proc nil))))))
 
 (defun classroom-precache-tts ()
   "Pre-generate all classroom TTS."
