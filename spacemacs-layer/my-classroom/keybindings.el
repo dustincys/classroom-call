@@ -1,6 +1,6 @@
 ;;; keybindings.el --- my-classroom layer keybindings file for Spacemacs
 ;;
-;; Copyright (c) 2025
+;; Copyright (c) 2026
 ;; Author: YanshuoChu
 ;; License: GPL-3.0
 

@@ -1,12 +1,16 @@
 ;;; packages.el --- my-classroom layer packages file for Spacemacs
 ;;
-;; Copyright (c) 2025
+;; Copyright (c) 2026
 ;; Author: YanshuoChu
 ;; License: GPL-3.0
 
 (defconst my-classroom-packages
   '(
-    (classroom-call :location (recipe :fetcher github :repo "dustincys/classroom-call.el"))
+    (classroom-call
+     :location (recipe
+                :fetcher github
+                :repo "dustincys/classroom-call"
+                :files ("*.el" "*.py")))
     )
   "The list of packages to install for the my-classroom layer.")
 

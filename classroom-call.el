@@ -1,4 +1,7 @@
 ;;; classroom-call.el --- Classroom random call system with TTS  -*- lexical-binding: t; -*-
+;; Copyright (c) 2026
+;; Author: YanshuoChu
+;; License: GPL-3.0
 
 (require 'cl-lib)
 (require 'subr-x)

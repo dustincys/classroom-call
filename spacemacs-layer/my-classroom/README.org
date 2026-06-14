@@ -20,7 +20,7 @@ The package is fetched automatically from GitHub — no manual clone needed.
 |-----------------+------------------------+------------------------------------------|
 | Python 3        | Pinyin & charts        | ~apt install python3~                    |
 | pypinyin        | Chinese → pinyin       | ~pip3 install pypinyin~                  |
-| matplotlib      | Statistics charts      | ~pip3 install matplotlib numpy~          |
+| matplotlib      | Statistics charts      | ~pip3 install matplotlib~          |
 | edge-tts        | TTS voice synthesis    | ~pip3 install edge-tts~                  |
 | mpv or ffplay   | Audio playback         | ~apt install mpv~                        |
 
