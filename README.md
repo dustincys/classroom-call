@@ -110,7 +110,7 @@ id,name,group
 - **name**：姓名（支持中文，自动生成拼音）
 - **group**：班级/分组
 
-默认从 `classroom-default-students-file`（仓库目录下的 `students.csv`）加载，也可在互动提示中手动选择其他文件。
+默认从 `classroom-default-students-file`（`user-emacs-directory` 下的 `students.csv`，避免写入包目录）加载，也可在互动提示中手动选择其他文件。
 
 ---
 
@@ -255,6 +255,12 @@ id,name,group
 (setq classroom-tts-voice "zh-CN-YunxiNeural")
 (setq classroom-tts-rate "+30%")
 (setq classroom-tts-player-command '("ffplay" "-nodisp" "-autoexit" "-loglevel" "quiet"))
+
+;; 点名动画 / TTS 并发 / CSV
+(setq classroom-roll-duration 2.5)           ; 点名动画时长（秒），C-u c 可跳过
+(setq classroom-tts-max-concurrent 2)        ; TTS 并发生成进程数
+(setq classroom-csv-skip-header t)           ; 学生名单 CSV 是否含表头
+(setq classroom-export-csv-add-bom nil)      ; 导出 CSV 是否添加 UTF-8 BOM（Excel 中文环境建议开启）
 ```
 
 ---
@@ -390,7 +396,7 @@ id,name,group
 - **name** — Student name (Chinese supported; pinyin auto-generated)
 - **group** — Class/group designation
 
-The default file is `classroom-default-students-file` (`students.csv` in the package directory). You can select a different file interactively when prompted.
+The default file is `classroom-default-students-file` (`students.csv` under `user-emacs-directory`, so data survives package upgrades). You can select a different file interactively when prompted.
 
 ---
 
@@ -535,6 +541,12 @@ All customizable options are available via `M-x customize-group RET classroom-ca
 (setq classroom-tts-voice "zh-CN-YunxiNeural")
 (setq classroom-tts-rate "+30%")
 (setq classroom-tts-player-command '("ffplay" "-nodisp" "-autoexit" "-loglevel" "quiet"))
+
+;; Roll animation / TTS concurrency / CSV
+(setq classroom-roll-duration 2.5)           ; roll animation seconds (C-u c skips it)
+(setq classroom-tts-max-concurrent 2)        ; concurrent TTS generation processes
+(setq classroom-csv-skip-header t)           ; whether the roster CSV has a header
+(setq classroom-export-csv-add-bom nil)      ; prepend UTF-8 BOM (enable for Excel/Windows)
 ```
 
 ---

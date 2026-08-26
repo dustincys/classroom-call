@@ -14,6 +14,12 @@
     )
   "The list of packages to install for the my-classroom layer.")
 
+;; Directory where classroom data files are stored.  Override it in
+;; ~/.spacemacs (e.g. via a layer variable) before the layer initializes.
+(defvar my-classroom-data-dir
+  "~/github/2026-med-data-process/"
+  "Directory for classroom record/state/CSV/chart/cache files.")
+
 (defun my-classroom/init-classroom-call ()
   "Initialize classroom-call for my-classroom layer."
   (use-package classroom-call
@@ -29,22 +35,19 @@
       (setq classroom-plot-script
             (expand-file-name "classroom-plot.py" classroom-directory))
 
-
-      (setq classroom-data-dir
-            "~/github/2026-med-data-process/")
       ;; ── File Paths ──
       (setq classroom-org-file
-            (expand-file-name "classroom-record.org" classroom-data-dir))
+            (expand-file-name "classroom-record.org" my-classroom-data-dir))
       (setq classroom-state-file
-            (expand-file-name "classroom-state.el" classroom-data-dir))
+            (expand-file-name "classroom-state.el" my-classroom-data-dir))
       (setq classroom-default-students-file
-            (expand-file-name "students.csv" classroom-data-dir))
+            (expand-file-name "students.csv" my-classroom-data-dir))
       (setq classroom-stats-image-file
-            (expand-file-name "classroom-stats.png" classroom-data-dir))
+            (expand-file-name "classroom-stats.png" my-classroom-data-dir))
       (setq classroom-export-csv-default-file
-            (expand-file-name "classroom-grades.csv" classroom-data-dir))
+            (expand-file-name "classroom-grades.csv" my-classroom-data-dir))
       (setq classroom-tts-cache-dir
-            (expand-file-name "classroom-tts-cache/" classroom-data-dir))
+            (expand-file-name "classroom-tts-cache/" my-classroom-data-dir))
 
       ;; ── Python ──
       (setq classroom-python-path "~/miniconda3/bin/python3")
