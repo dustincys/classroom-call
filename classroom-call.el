@@ -312,7 +312,7 @@ returned as-is."
 (defun classroom-format-student (student &optional highlight)
   "Format STUDENT compactly: name (pinyin) then id + group on one line.
 Wrap the name in >>> ... <<< when HIGHLIGHT is non-nil."
-  (format "%s%s (%s)%s\n%s %s"
+  (format "%s%s (%s)%s\n学号：%s   班级：%s"
           (if highlight ">>> " "")
           (plist-get student :name)
           (plist-get student :pinyin)
@@ -527,13 +527,13 @@ Switch to the buffer first if SWITCH is non-nil."
                        classroom-round
                        (length classroom-current-pool)
                        (classroom-answered-count))
-               'face '(:height 1.1 :weight bold)))
+               'face '(:height 2.0 :weight bold)))
       (when (car lines)
-        (insert (propertize (car lines) 'face '(:height 2.0 :weight bold)))
+        (insert (propertize (car lines) 'face '(:height 3.0 :weight bold)))
         (insert "\n"))
       (when (cdr lines)
         (insert (propertize (mapconcat #'identity (cdr lines) "  ")
-                            'face '(:height 0.9 :foreground "gray50")))))
+                            'face '(:height 2.0 :weight bold)))))
     (goto-char (point-min)))
   (when switch
     (switch-to-buffer (classroom-buffer)))
