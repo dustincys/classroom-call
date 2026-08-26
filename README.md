@@ -88,7 +88,7 @@
 2. 在 Emacs 中执行 `M-x classroom-start`
 3. 选择学生名单 CSV 文件（首次启动）
 4. 按 `c` 开始点名
-5. 学生回答后按数字键 `0`–`4` 评分，或按 `c` 取消本次提问
+5. 学生回答后按数字键 `0`–`4` 评分，按 `a` 挂起未到课学生，或按 `c` 取消本次提问
 6. 重复直到所有学生回答完毕
 
 ---
@@ -130,7 +130,7 @@ id,name,group
 2. 屏幕上出现滚动动画（随机快速切换学生姓名）
 3. 动画结束后，最终被点中的学生信息全屏显示
 4. 如启用了 TTS，系统会用中文朗读"请 XXX 回答问题"
-5. 等待教师输入评分（0–4）或取消（c）
+5. 等待教师输入评分（0–4）、挂起（a）或取消（c）
 
 ### 评分标准
 
@@ -141,7 +141,8 @@ id,name,group
 | `2` | 回答正确，但无解释或解释无逻辑 | 答案正确但说不清原因 |
 | `3` | 回答正确解释有逻辑，或回答错误但解释很有逻辑 | 逻辑清晰，无论对错都值得肯定 |
 | `4` | 推翻已有结论并提出新观点 | 批判性思维，超越标准答案 |
-| `c` | 取消 | 取消本次提问，学生放回池中 |
+| `a` | 挂起 | 学生未到课，推迟到下次点名，不计入无回答次数 |
+| `c` | 取消 | 取消本次提问（误操作），学生放回池中 |
 
 ### 键盘快捷键
 
@@ -234,6 +235,8 @@ id,name,group
 3. 如果学生之后正常回答了问题（1–4 分），其无回答计数和挂起状态会被清除
 
 此机制确保无回答的学生有机会在后续课堂中被再次点到，但不会无限期逃避。
+
+对于**未到课**的学生，可在评分时按 `a` 选择**挂起**：学生直接推迟到下次点名（放入 `classroom-unanswered-pool`），**不计入**无回答次数。挂起记录会以 `:GRADE: 挂起` 写入 Org 记录，导出 CSV 时自动忽略（不占用成绩列）。
 
 ---
 
@@ -374,7 +377,7 @@ Recommended: use `use-package`:
 2. In Emacs, run `M-x classroom-start`
 3. Select the student CSV file (first-time launch only)
 4. Press `c` to start a call
-5. After the student answers, press `0`–`4` to grade, or `c` to cancel
+5. After the student answers, press `0`–`4` to grade, `a` to postpone an absent student, or `c` to cancel
 6. Repeat until all students have been called
 
 ---
@@ -416,7 +419,7 @@ The default file is `classroom-default-students-file` (`students.csv` under `use
 2. A rolling animation displays randomly cycling student names
 3. The final selected student is shown full-screen
 4. If TTS is enabled, the system speaks "Please, [Name], answer the question" in Chinese
-5. The teacher enters a grade (0–4) or cancels (c)
+5. The teacher enters a grade (0–4), postpones an absent student (a), or cancels (c)
 
 ### Grading Rubric
 
@@ -427,7 +430,8 @@ The default file is `classroom-default-students-file` (`students.csv` under `use
 | `2` | Correct answer, no/illogical explanation | Answer is right but can't explain why |
 | `3` | Correct answer with logical explanation, OR wrong answer with logical reasoning | Clear thinking matters more than correctness |
 | `4` | Overturns existing conclusions and proposes new ideas | Critical thinking beyond the standard answer |
-| `c` | Cancel | Cancel this call and return student to the pool |
+| `a` | Postpone (Hang) | Student was absent; postponed to the next session, not counted as a no-answer |
+| `c` | Cancel | Cancel this call (misoperation) and return student to the pool |
 
 ### Keyboard Shortcuts
 
@@ -520,6 +524,8 @@ When a student does not answer (grade 0):
 3. If the student later gives a valid answer (grades 1–4), their no-answer count and postponed status are cleared
 
 This mechanism ensures that non-responding students get another chance in future sessions without being able to evade indefinitely.
+
+For students who are **absent**, press `a` at the grading prompt to **postpone (hang)**: the student is moved to `classroom-unanswered-pool` and re-added on the next startup, **without** counting toward their no-answer strikes. Postponed calls are recorded with `:GRADE: 挂起` in the Org file and are skipped by the CSV export (no grade column pollution).
 
 ---
 

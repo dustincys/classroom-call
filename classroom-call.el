@@ -536,17 +536,18 @@ on a timer so the UI stays responsive; when it finishes,
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defun classroom-grade-student ()
-  "Grade the current student, returning the grade label or \\='cancel."
+  "Grade the current student, returning the grade label, \\='hang or \\='cancel."
   (redisplay)
   (let* ((keys (mapcar #'car classroom-score-levels))
          (prompt (mapconcat
                   (lambda (k) (format "%s %s" k (classroom-score-level-label k)))
                   keys "\n"))
-         (choices (append (mapcar (lambda (k) (string-to-char k)) keys) '(?c)))
-         (choice (read-char-choice (format "%s\nc 取消本次提问\n评分: " prompt)
+         (choices (append (mapcar (lambda (k) (string-to-char k)) keys) '(?a ?c)))
+         (choice (read-char-choice (format "%s\na 挂起（未到课，推迟到下次）\nc 取消本次提问\n评分: " prompt)
                                    choices)))
     (redisplay)
     (cond ((eq choice ?c) 'cancel)
+          ((eq choice ?a) 'hang)
           (t (classroom-score-level-label (char-to-string choice))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -853,12 +854,17 @@ Returns immediately; the menu is never blocked on TTS generation."
     (let ((grade (classroom-grade-student)))
       (cond
        ((eq grade 'cancel)
-        ;; Put back and avoid immediate repeat.
+        ;; Misoperation: put back and avoid immediate repeat.
         (setq classroom-last-cancelled-id (plist-get student :id))
         (setq classroom-current-pool
               (classroom-shuffle (append classroom-current-pool (list student))))
         (classroom-save-state)
         (message "已取消提问，并重新随机"))
+
+       ((eq grade 'hang)
+        ;; Student did not come to class: postpone to the next session
+        ;; without counting a no-answer strike.
+        (classroom--hang-student student))
 
        (t
         (classroom-save-record student grade)
@@ -896,6 +902,21 @@ Returns immediately; the menu is never blocked on TTS generation."
   (setq classroom-no-answer-counts
         (cl-remove-if (lambda (pair) (equal (car pair) id))
                       classroom-no-answer-counts)))
+
+(defun classroom--hang-student (student)
+  "Postpone STUDENT to the next session (absent), without a no-answer strike.
+Records the call as 挂起 in the org file and history."
+  (classroom-save-record student "挂起")
+  (classroom-add-history student "挂起")
+  (let ((id (plist-get student :id)))
+    ;; Replace any earlier postponement entry to avoid duplicates.
+    (setq classroom-unanswered-pool
+          (cl-remove-if (lambda (s) (equal (plist-get s :id) id))
+                        classroom-unanswered-pool))
+    (push student classroom-unanswered-pool))
+  (classroom-save-state)
+  (message "%s -> 挂起（未到课，已推迟到下次点名）"
+           (classroom-student-line student)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Start / Resume

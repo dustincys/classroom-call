@@ -185,6 +185,36 @@
   (classroom--clear-no-answer "2")
   (should (null classroom-no-answer-counts)))
 
+(ert-deftest classroom-hang-student-postpones-without-strike ()
+  (let ((org (make-temp-file "classroom-record-" nil ".org"))
+        (state (make-temp-file "classroom-state-" nil ".el")))
+    (unwind-protect
+        (progn
+          (setq classroom-org-file org
+                classroom-state-file state
+                classroom-students '((:id "1" :name "A" :pinyin "A" :group "1班")
+                                     (:id "2" :name "B" :pinyin "B" :group "1班"))
+                classroom-no-answer-counts '(("2" . 1))
+                classroom-unanswered-pool nil
+                classroom-history nil
+                classroom-round 1)
+          (classroom--hang-student (car classroom-students))
+          ;; postponed to the next session
+          (should (= (length classroom-unanswered-pool) 1))
+          (should (equal (plist-get (car classroom-unanswered-pool) :id) "1"))
+          ;; no-answer counts are untouched by 挂起
+          (should (equal (alist-get "2" classroom-no-answer-counts nil nil #'equal) 1))
+          (should (null (alist-get "1" classroom-no-answer-counts nil nil #'equal)))
+          ;; recorded in history with the 挂起 grade
+          (should (equal (plist-get (car classroom-history) :grade) "挂起"))
+          ;; recorded in the org file
+          (should (string-match-p "挂起"
+                                  (with-temp-buffer
+                                    (insert-file-contents org)
+                                    (buffer-string)))))
+      (delete-file org)
+      (delete-file state))))
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Pinyin passthrough
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
