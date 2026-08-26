@@ -36,7 +36,7 @@
 - **五级评分制** — 内置 0–4 分评分标准，兼顾回答正确性与逻辑表达能力
 - **多轮次支持** — 支持多轮点名，每轮学生顺序随机打乱
 - **Org 记录** — 全部点名和评分记录以 Org mode 格式保存，方便检索和回顾
-- **无回答处理** — 累计无回答 ≤2 次的学生推迟到下一节，第 3 次则移出本轮点名池
+- **无回答处理** — 无回答（0 分）仅记录、不挂起；未到课学生可用 `a` 挂起到下次点名
 - **取消提问** — 允许取消当前点名，被点学生放回池中重新随机
 - **状态持久化** — 课堂状态（当前轮次、剩余池、历史记录等）自动保存，Emacs 重启后可恢复
 - **统计图表** — 按班级生成成绩分布柱状图（含平均分折线），直观展示各班级表现
@@ -140,8 +140,8 @@ id,name,group
 | `3` | 回答正确解释有逻辑，或回答错误但解释很有逻辑（98分） | 逻辑清晰，无论对错都值得肯定 |
 | `2` | 回答正确，但无解释或解释无逻辑（80分） | 答案正确但说不清原因 |
 | `1` | 回答错误且无解释或解释无逻辑（60分） | 答案和解释均有问题 |
-| `0` | 无回答（0分） | 学生未回答问题 |
-| `a` | 挂起 | 学生未到课，推迟到下次点名，不计入无回答次数 |
+| `0` | 无回答（0分） | 学生未回答问题（仅记录，不挂起） |
+| `a` | 挂起 | 学生未到课，推迟到下次点名 |
 | `c` | 取消 | 取消本次提问（误操作），学生放回池中 |
 
 ### 键盘快捷键
@@ -219,7 +219,6 @@ id,name,group
 - 全部历史评分记录
 - 学生名单
 - 最后取消的学生 ID
-- 无回答累计计数
 - 挂起（推迟）学生列表
 
 每次评分后自动保存。下次启动时，系统会询问是否恢复上次状态。
@@ -228,15 +227,9 @@ id,name,group
 
 ## 无回答处理机制
 
-当学生对点名无回答（评分为 0）时：
-
-1. **第 1–2 次无回答**：学生被放入 `classroom-unanswered-pool`，推迟到下次启动时重新加入点名池
-2. **第 3 次无回答**：学生永久移出当前轮次的点名池
-3. 如果学生之后正常回答了问题（1–4 分），其无回答计数和挂起状态会被清除
-
-此机制确保无回答的学生有机会在后续课堂中被再次点到，但不会无限期逃避。
-
-对于**未到课**的学生，可在评分时按 `a` 选择**挂起**：学生直接推迟到下次点名（放入 `classroom-unanswered-pool`），**不计入**无回答次数。挂起记录会以 `:GRADE: 挂起` 写入 Org 记录，导出 CSV 时自动忽略（不占用成绩列）。
+- **无回答（0 分）**：仅记录本次无回答，学生移出本轮点名池，**不挂起**、不推迟；下一轮自动重新加入点名池
+- **挂起（`a`）**：学生未到课时使用，直接推迟到下次点名（放入 `classroom-unanswered-pool`），下次启动时放回
+- 如果被挂起的学生之后正常回答了问题（1–4 分），其挂起状态会被清除（从 `classroom-unanswered-pool` 移除）
 
 ---
 
@@ -325,7 +318,7 @@ An Emacs extension for randomly calling on students in class, with TTS voice ann
 - **Five-Level Grading** — Built-in 0–4 grading rubric covering both answer correctness and logical reasoning
 - **Multi-Round Support** — Supports multiple rounds of questioning with reshuffled order each round
 - **Org Mode Records** — All call and grading records saved in Org mode format for easy review and retrieval
-- **No-Answer Handling** — Students with ≤2 no-answers are postponed to the next session; 3rd no-answer removes them from the pool
+- **No-Answer Handling** — A no-answer (grade 0) is recorded only and never postpones; absent students can be postponed with `a`
 - **Cancel & Reshuffle** — Cancel a call and return the student to the pool for re-randomization
 - **State Persistence** — Classroom state (round, pool, history) auto-saves and survives Emacs restarts
 - **Statistics Charts** — Per-class grade distribution bar charts with average score line, generated via Python/matplotlib
@@ -429,8 +422,8 @@ The default file is `classroom-default-students-file` (`students.csv` under `use
 | `3` | Correct answer with logical explanation, OR wrong answer with logical reasoning (98) | Clear thinking matters more than correctness |
 | `2` | Correct answer, no/illogical explanation (80) | Answer is right but can't explain why |
 | `1` | Wrong answer, no/illogical explanation (60) | Both answer and reasoning are incorrect |
-| `0` | No Answer (0) | Student did not respond |
-| `a` | Postpone (Hang) | Student was absent; postponed to the next session, not counted as a no-answer |
+| `0` | No Answer (0) | Student did not respond (recorded only, not postponed) |
+| `a` | Postpone (Hang) | Student was absent; postponed to the next session |
 | `c` | Cancel | Cancel this call (misoperation) and return student to the pool |
 
 ### Keyboard Shortcuts
@@ -508,7 +501,6 @@ Classroom state is automatically saved to `classroom-state.el`, including:
 - Complete grading history
 - Student roster
 - Last cancelled student ID
-- No-answer cumulative counts
 - Postponed (unanswered) student list
 
 State is saved after every grading action. On the next launch, the system asks whether to restore the previous state.
@@ -517,15 +509,11 @@ State is saved after every grading action. On the next launch, the system asks w
 
 ## No-Answer Handling
 
-When a student does not answer (grade 0):
+- **No answer (grade 0)**: recorded only; the student leaves the current round's pool and is **not** postponed. They rejoin the pool next round.
+- **Postpone (`a`)**: for students who are **absent**; moves them to `classroom-unanswered-pool` and re-adds them on the next startup.
+- If a postponed student later answers validly (grades 1–4), their postponed status is cleared (removed from `classroom-unanswered-pool`).
 
-1. **1st–2nd no-answer**: The student is placed in `classroom-unanswered-pool` and postponed to the next session (re-added to the pool on next startup)
-2. **3rd no-answer**: The student is permanently removed from the current round's call pool
-3. If the student later gives a valid answer (grades 1–4), their no-answer count and postponed status are cleared
-
-This mechanism ensures that non-responding students get another chance in future sessions without being able to evade indefinitely.
-
-For students who are **absent**, press `a` at the grading prompt to **postpone (hang)**: the student is moved to `classroom-unanswered-pool` and re-added on the next startup, **without** counting toward their no-answer strikes. Postponed calls are recorded with `:GRADE: 挂起` in the Org file and are skipped by the CSV export (no grade column pollution).
+Postponed calls are recorded with `:GRADE: 挂起` in the Org file and are skipped by the CSV export (no grade column pollution).
 
 ---
 

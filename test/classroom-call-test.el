@@ -62,12 +62,6 @@
     (should next)
     (should (= classroom-round 2))))
 
-(ert-deftest classroom-reset-pool-keeps-no-answer-counts ()
-  (setq classroom-students '((:id "1" :name "A") (:id "2" :name "B")))
-  (setq classroom-no-answer-counts '(("1" . 2)))
-  (classroom-reset-pool)
-  (should (equal (alist-get "1" classroom-no-answer-counts nil nil #'equal) 2)))
-
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Persistent state
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -82,7 +76,6 @@
                 classroom-history '((:id "8" :name "H" :grade "无回答"))
                 classroom-students '((:id "8" :name "H" :group "1班"))
                 classroom-last-cancelled-id "8"
-                classroom-no-answer-counts '(("8" . 2))
                 classroom-unanswered-pool '((:id "9" :name "I")))
           (classroom-save-state)
           (setq classroom-round 1
@@ -90,14 +83,12 @@
                 classroom-history nil
                 classroom-students nil
                 classroom-last-cancelled-id nil
-                classroom-no-answer-counts nil
                 classroom-unanswered-pool nil)
           (classroom-load-state)
           (should (= classroom-round 3))
           (should (= (length classroom-current-pool) 2)) ; pool + merged
           (should (equal classroom-history '((:id "8" :name "H" :grade "无回答"))))
           (should (equal classroom-last-cancelled-id "8"))
-          (should (equal classroom-no-answer-counts '(("8" . 2))))
           ;; The unanswered pool was merged and the merge persisted.
           (should (null classroom-unanswered-pool))
           (let ((saved (classroom--read-state-data)))
@@ -116,7 +107,6 @@
                 classroom-history nil
                 classroom-students nil
                 classroom-last-cancelled-id nil
-                classroom-no-answer-counts nil
                 classroom-unanswered-pool nil)
           (classroom-save-state)
           (with-temp-buffer
@@ -202,17 +192,10 @@
       (delete-file state-file))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; No-answer accounting
+;; Hang (absent) handling
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(ert-deftest classroom-clear-no-answer ()
-  (setq classroom-no-answer-counts '(("1" . 2) ("2" . 1)))
-  (classroom--clear-no-answer "1")
-  (should (equal classroom-no-answer-counts '(("2" . 1))))
-  (classroom--clear-no-answer "2")
-  (should (null classroom-no-answer-counts)))
-
-(ert-deftest classroom-hang-student-postpones-without-strike ()
+(ert-deftest classroom-hang-student-postpones ()
   (let ((org (make-temp-file "classroom-record-" nil ".org"))
         (state (make-temp-file "classroom-state-" nil ".el")))
     (unwind-protect
@@ -221,7 +204,6 @@
                 classroom-state-file state
                 classroom-students '((:id "1" :name "A" :pinyin "A" :group "1班")
                                      (:id "2" :name "B" :pinyin "B" :group "1班"))
-                classroom-no-answer-counts '(("2" . 1))
                 classroom-unanswered-pool nil
                 classroom-history nil
                 classroom-round 1)
@@ -229,9 +211,6 @@
           ;; postponed to the next session
           (should (= (length classroom-unanswered-pool) 1))
           (should (equal (plist-get (car classroom-unanswered-pool) :id) "1"))
-          ;; no-answer counts are untouched by 挂起
-          (should (equal (alist-get "2" classroom-no-answer-counts nil nil #'equal) 1))
-          (should (null (alist-get "1" classroom-no-answer-counts nil nil #'equal)))
           ;; recorded in history with the 挂起 grade
           (should (equal (plist-get (car classroom-history) :grade) "挂起"))
           ;; recorded in the org file

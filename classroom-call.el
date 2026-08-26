@@ -163,10 +163,8 @@ otherwise mis-detect the encoding of Chinese text."
   "Current round number (unique within the record file).")
 (defvar classroom-last-cancelled-id nil
   "ID of the last cancelled student, to avoid immediate repeat.")
-(defvar classroom-no-answer-counts nil
-  "Alist of (id . count) accumulating no-answer strikes across rounds.")
 (defvar classroom-unanswered-pool nil
-  "Students who have no-answer < 3 times and are postponed to next session.")
+  "Students postponed to the next session (absent / 挂起).")
 
 ;; Internal, non-persisted state.
 (defvar classroom--random-seeded nil
@@ -311,11 +309,14 @@ returned as-is."
 ;; Student Formatting
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defun classroom-format-student (student)
-  "Format STUDENT for big UI."
-  (format "%s (%s)\n%s\n%s"
+(defun classroom-format-student (student &optional highlight)
+  "Format STUDENT compactly: name (pinyin) then id + group on one line.
+Wrap the name in >>> ... <<< when HIGHLIGHT is non-nil."
+  (format "%s%s (%s)%s\n%s %s"
+          (if highlight ">>> " "")
           (plist-get student :name)
           (plist-get student :pinyin)
+          (if highlight " <<<" "")
           (plist-get student :id)
           (plist-get student :group)))
 
@@ -405,9 +406,7 @@ returned as-is."
     (append vec nil)))
 
 (defun classroom-reset-pool ()
-  "Reset pool for a new round.
-No-answer counts are deliberately NOT cleared here: they accumulate
-across rounds and are reset only when a student answers validly."
+  "Reset pool for a new round."
   (setq classroom-current-pool
         (classroom-shuffle classroom-students)))
 
@@ -442,7 +441,6 @@ are the only one left in the pool."
         :history classroom-history
         :students classroom-students
         :last-cancelled classroom-last-cancelled-id
-        :no-answer-counts classroom-no-answer-counts
         :unanswered-pool classroom-unanswered-pool))
 
 (defun classroom--restore-state (data)
@@ -452,7 +450,6 @@ are the only one left in the pool."
         classroom-history (plist-get data :history)
         classroom-students (plist-get data :students)
         classroom-last-cancelled-id (plist-get data :last-cancelled)
-        classroom-no-answer-counts (plist-get data :no-answer-counts)
         classroom-unanswered-pool (plist-get data :unanswered-pool)))
 
 (defun classroom-save-state ()
@@ -517,19 +514,27 @@ on first load."
   (- (length classroom-students) (length classroom-current-pool)))
 
 (defun classroom-render (text &optional switch)
-  "Render TEXT in the classroom buffer.
+  "Render TEXT in the classroom buffer, left-aligned and compact.
+TEXT is a two-line student description (name / id+group): the header
+and detail lines use a small face, the student name is prominent.
 Switch to the buffer first if SWITCH is non-nil."
   (with-current-buffer (classroom-buffer)
-    (let ((inhibit-read-only t))
+    (let ((inhibit-read-only t)
+          (lines (split-string text "\n")))
       (erase-buffer)
-      (insert "\n\n")
-      (insert (propertize "课堂提问系统\n\n" 'face '(:height 2.0 :weight bold)))
-      (insert (propertize (format "第 %d 轮\n" classroom-round) 'face '(:height 1.5 :weight bold)))
-      (insert (format "剩余人数：%d\n" (length classroom-current-pool)))
-      (insert (format "已回答人数：%d\n\n" (classroom-answered-count)))
-      (insert (propertize text 'face '(:height 2.5 :weight bold)))
-      (goto-char (point-min))
-      (center-region (point-min) (point-max))))
+      (insert (propertize
+               (format "课堂提问系统 第 %d 轮（剩余 %d 人，已回答 %d 人）\n\n"
+                       classroom-round
+                       (length classroom-current-pool)
+                       (classroom-answered-count))
+               'face '(:height 1.1 :weight bold)))
+      (when (car lines)
+        (insert (propertize (car lines) 'face '(:height 2.0 :weight bold)))
+        (insert "\n"))
+      (when (cdr lines)
+        (insert (propertize (mapconcat #'identity (cdr lines) "  ")
+                            'face '(:height 0.9 :foreground "gray50")))))
+    (goto-char (point-min)))
   (when switch
     (switch-to-buffer (classroom-buffer)))
   (redisplay))
@@ -894,7 +899,7 @@ Returns immediately; the menu is never blocked on TTS generation."
     (unless student
       (user-error "没有剩余学生，请先加载学生名单"))
     (setq classroom-last-cancelled-id nil)
-    (classroom-render (format ">>> %s <<<" (classroom-format-student student)) t)
+    (classroom-render (classroom-format-student student t) t)
     (classroom-speak-current-student student)
     (let ((grade (classroom-grade-student)))
       (cond
@@ -907,49 +912,25 @@ Returns immediately; the menu is never blocked on TTS generation."
         (message "已取消提问，并重新随机"))
 
        ((eq grade 'hang)
-        ;; Student did not come to class: postpone to the next session
-        ;; without counting a no-answer strike.
+        ;; Student did not come to class: postpone to the next session.
         (classroom--hang-student student))
 
        (t
+        ;; Record the grade.  A no-answer (0) is recorded only and is
+        ;; NOT postponed; an answered student clears any earlier
+        ;; postponement (挂起) status.
         (classroom-save-record student grade)
         (classroom-add-history student grade)
         (let ((id (plist-get student :id)))
-          ;; Always remove from unanswered pool (in case they had been
-          ;; postponed before).
           (setq classroom-unanswered-pool
                 (cl-remove-if (lambda (s) (equal (plist-get s :id) id))
-                              classroom-unanswered-pool))
-
-          (if (string= grade (classroom-score-level-label "0"))
-              ;; Handle no-answer with cumulative retry count.
-              (let ((count (1+ (alist-get id classroom-no-answer-counts 0 nil #'equal))))
-                (setf (alist-get id classroom-no-answer-counts nil nil #'equal) count)
-                (if (< count 3)
-                    ;; First or second no-answer: postpone to next session.
-                    (progn
-                      (push student classroom-unanswered-pool)
-                      (message "%s -> %s (第 %d 次无回答，已挂起，下次启动时放回)"
-                               (classroom-student-line student) grade count))
-                  ;; Third (or later) no-answer: remove from this round's pool.
-                  (message "%s -> %s (第 %d 次无回答，已移出本轮点名池)"
-                           (classroom-student-line student) grade count)))
-            ;; Valid answer (1-4): clear no-answer count and postponed status.
-            (progn
-              (classroom--clear-no-answer id)
-              (message "%s -> %s" (classroom-student-line student) grade))))
-
+                              classroom-unanswered-pool)))
+        (message "%s -> %s" (classroom-student-line student) grade)
         (classroom-save-state)
         (classroom-speak-grade grade))))))
 
-(defun classroom--clear-no-answer (id)
-  "Clear the accumulated no-answer count for student ID."
-  (setq classroom-no-answer-counts
-        (cl-remove-if (lambda (pair) (equal (car pair) id))
-                      classroom-no-answer-counts)))
-
 (defun classroom--hang-student (student)
-  "Postpone STUDENT to the next session (absent), without a no-answer strike.
+  "Postpone STUDENT to the next session (absent / 挂起).
 Records the call as 挂起 in the org file and history."
   (classroom-save-record student "挂起")
   (classroom-add-history student "挂起")
@@ -992,7 +973,6 @@ Records the call as 挂起 in the org file and history."
       (setq classroom-round (1+ (classroom--org-max-round)))
       (setq classroom-history nil)
       (setq classroom-last-cancelled-id nil)
-      (setq classroom-no-answer-counts nil)
       (setq classroom-unanswered-pool nil)   ; fresh start
       (call-interactively #'classroom-load-csv)))
   (delete-other-windows)
