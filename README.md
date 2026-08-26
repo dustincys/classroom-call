@@ -134,13 +134,13 @@ id,name,group
 
 ### 评分标准
 
-| 按键 | 等级 | 描述 |
-|------|------|------|
-| `0` | 无回答 | 学生未回答问题 |
-| `1` | 回答错误且无解释或解释无逻辑 | 答案和解释均有问题 |
-| `2` | 回答正确，但无解释或解释无逻辑 | 答案正确但说不清原因 |
-| `3` | 回答正确解释有逻辑，或回答错误但解释很有逻辑 | 逻辑清晰，无论对错都值得肯定 |
-| `4` | 推翻已有结论并提出新观点 | 批判性思维，超越标准答案 |
+| 按键 | 等级（分数） | 描述 |
+|------|------------|------|
+| `4` | 推翻已有结论并提出新观点（100分） | 批判性思维，超越标准答案 |
+| `3` | 回答正确解释有逻辑，或回答错误但解释很有逻辑（98分） | 逻辑清晰，无论对错都值得肯定 |
+| `2` | 回答正确，但无解释或解释无逻辑（80分） | 答案正确但说不清原因 |
+| `1` | 回答错误且无解释或解释无逻辑（60分） | 答案和解释均有问题 |
+| `0` | 无回答（0分） | 学生未回答问题 |
 | `a` | 挂起 | 学生未到课，推迟到下次点名，不计入无回答次数 |
 | `c` | 取消 | 取消本次提问（误操作），学生放回池中 |
 
@@ -163,7 +163,7 @@ id,name,group
 
 - 当前轮次和剩余/已回答人数
 - 按班级分组的成绩分布柱状图（0–4 等级计数）
-- 各班级平均分折线（映射：0→0, 1→60, 2→80, 3→98, 4→100）
+- 各班级平均分折线（映射：0→0, 1→60, 2→80, 3→98, 4→100，可通过 `classroom-score-points` 调整）
 - 全员平均分参考线
 - 当前挂起（无回答推迟）的学生列表
 
@@ -423,13 +423,13 @@ The default file is `classroom-default-students-file` (`students.csv` under `use
 
 ### Grading Rubric
 
-| Key | Level | Description |
-|-----|-------|-------------|
-| `0` | No Answer | Student did not respond |
-| `1` | Wrong answer, no/illogical explanation | Both answer and reasoning are incorrect |
-| `2` | Correct answer, no/illogical explanation | Answer is right but can't explain why |
-| `3` | Correct answer with logical explanation, OR wrong answer with logical reasoning | Clear thinking matters more than correctness |
-| `4` | Overturns existing conclusions and proposes new ideas | Critical thinking beyond the standard answer |
+| Key | Level (points) | Description |
+|-----|----------------|-------------|
+| `4` | Overturns existing conclusions and proposes new ideas (100) | Critical thinking beyond the standard answer |
+| `3` | Correct answer with logical explanation, OR wrong answer with logical reasoning (98) | Clear thinking matters more than correctness |
+| `2` | Correct answer, no/illogical explanation (80) | Answer is right but can't explain why |
+| `1` | Wrong answer, no/illogical explanation (60) | Both answer and reasoning are incorrect |
+| `0` | No Answer (0) | Student did not respond |
 | `a` | Postpone (Hang) | Student was absent; postponed to the next session, not counted as a no-answer |
 | `c` | Cancel | Cancel this call (misoperation) and return student to the pool |
 
@@ -452,7 +452,7 @@ Press `s` or run `M-x classroom-show-statistics` to view:
 
 - Current round number and remaining/answered counts
 - Per-class grade distribution bar chart (counts for levels 0–4)
-- Per-class average score line (score mapping: 0→0, 1→60, 2→80, 3→98, 4→100)
+- Per-class average score line (score mapping: 0→0, 1→60, 2→80, 3→98, 4→100, adjustable via `classroom-score-points`)
 - Overall average score reference line
 - List of currently postponed (no-answer) students
 

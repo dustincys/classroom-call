@@ -28,6 +28,8 @@ def main(json_path, output_path):
     labels = d['labels']  # 等级名称（0~4）
     classes = d['classes']  # 班级名称
     data = d['data']  # 二维列表，每行是一个班级的五个等级计数
+    # 等级索引 -> 分数（由 Elisp 传入，与评分提示保持一致）
+    score_map = d.get('scores', [0, 60, 80, 98, 100])
 
     n_groups = len(classes)
     n_bars = len(labels)
@@ -50,8 +52,7 @@ def main(json_path, output_path):
     # 等级图例放在图外下方
     ax1.legend(loc='upper left', bbox_to_anchor=(0, -0.15), borderaxespad=0)
 
-    # ---------- 分数映射 ----------
-    score_map = [0, 60, 80, 98, 100]  # 等级索引 -> 分数
+    # ---------- 分数映射（来自 JSON） ----------
 
     # 计算每个班级的平均分
     avg_scores = []

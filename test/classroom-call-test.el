@@ -138,6 +138,31 @@
   (should (null (classroom-score-level-key "不存在的等级")))
   (should (= (length (classroom-score-level-labels)) 5)))
 
+(ert-deftest classroom-score-level-points ()
+  (should (= (classroom-score-level-points "0") 0))
+  (should (= (classroom-score-level-points "1") 60))
+  (should (= (classroom-score-level-points "2") 80))
+  (should (= (classroom-score-level-points "3") 98))
+  (should (= (classroom-score-level-points "4") 100))
+  (should (null (classroom-score-level-points "9"))))
+
+(ert-deftest classroom-grade-prompt-order-and-scores ()
+  (let ((prompt (classroom--grade-prompt)))
+    ;; Best level first, worst last, then 无回答 / 挂起 / 取消.
+    (should (string-match-p "\\`4 " prompt))
+    (should (string-match-p "（100分）" prompt))
+    (should (string-match-p "（98分）" prompt))
+    (should (string-match-p "（80分）" prompt))
+    (should (string-match-p "（60分）" prompt))
+    (should (string-match-p "（0分）" prompt))
+    (should (< (string-match "4 " prompt)
+               (string-match "3 " prompt)
+               (string-match "2 " prompt)
+               (string-match "1 " prompt)
+               (string-match "0 " prompt)
+               (string-match "a 挂起" prompt)
+               (string-match "c 取消" prompt)))))
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; CSV parsing / escaping
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

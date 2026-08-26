@@ -218,6 +218,36 @@ and TTS texts are all derived from it.")
   "Return the list of rubric labels."
   (mapcar #'cdr classroom-score-levels))
 
+(defcustom classroom-score-points
+  '(("0" . 0) ("1" . 60) ("2" . 80) ("3" . 98) ("4" . 100))
+  "Points awarded per rubric key.
+Used in the grading prompt and passed to the chart script, so the
+two always stay in sync."
+  :type '(alist :key-type string :value-type integer)
+  :group 'classroom-call)
+
+(defun classroom-score-level-points (key)
+  "Return the points for rubric KEY, or nil if unknown."
+  (cdr (assoc key classroom-score-points)))
+
+(defun classroom--grade-prompt ()
+  "Return the grading prompt, best level first, with point values.
+Lines are ordered: highest-scoring answer first, lowest last, then
+无回答, 挂起 and 取消."
+  (let ((lines (mapcar
+                (lambda (pair)
+                  (let ((key (car pair)))
+                    (format "%s %s（%d分）"
+                            key
+                            (classroom-score-level-label key)
+                            (or (classroom-score-level-points key) 0))))
+                (reverse classroom-score-levels))))
+    (mapconcat #'identity
+               (append lines
+                       '("a 挂起（未到课，推迟到下次）"
+                         "c 取消本次提问"))
+               "\n")))
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Pinyin
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -538,12 +568,9 @@ on a timer so the UI stays responsive; when it finishes,
 (defun classroom-grade-student ()
   "Grade the current student, returning the grade label, \\='hang or \\='cancel."
   (redisplay)
-  (let* ((keys (mapcar #'car classroom-score-levels))
-         (prompt (mapconcat
-                  (lambda (k) (format "%s %s" k (classroom-score-level-label k)))
-                  keys "\n"))
+  (let* ((keys (mapcar #'car (reverse classroom-score-levels)))
          (choices (append (mapcar (lambda (k) (string-to-char k)) keys) '(?a ?c)))
-         (choice (read-char-choice (format "%s\na 挂起（未到课，推迟到下次）\nc 取消本次提问\n评分: " prompt)
+         (choice (read-char-choice (format "%s\n评分: " (classroom--grade-prompt))
                                    choices)))
     (redisplay)
     (cond ((eq choice ?c) 'cancel)
@@ -600,10 +627,14 @@ on a timer so the UI stays responsive; when it finishes,
   (let* ((labels (classroom-score-level-labels))
          (classes (mapcar #'car class-data))
          (data (vconcat (mapcar (lambda (c) (vconcat (append (cdr c) nil))) class-data)))
+         (scores (vconcat (mapcar (lambda (pair)
+                                    (or (classroom-score-level-points (car pair)) 0))
+                                  classroom-score-levels)))
          (json-file (make-temp-file "classroom-data-" nil ".json"))
          (json-str (json-encode `((labels . ,(vconcat labels))
                                   (classes . ,(vconcat classes))
-                                  (data . ,data))))
+                                  (data . ,data)
+                                  (scores . ,scores))))
          (err-buf (get-buffer-create "*classroom-chart-debug*"))
          ret)
     (with-temp-file json-file
