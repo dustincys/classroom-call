@@ -129,6 +129,14 @@ the animation entirely."
   :type 'number
   :group 'classroom-call)
 
+(defcustom classroom-grade-menu-max-height 0.9
+  "Maximum height of the grading menu, as a fraction of the frame height.
+The menu is 11 lines tall; the minibuffer grows to show it fully.
+Raise this value if the menu is truncated on small frames, or lower
+it to keep the minibuffer compact."
+  :type 'number
+  :group 'classroom-call)
+
 (defcustom classroom-csv-skip-header t
   "Whether to skip the first line of a student CSV file."
   :type 'boolean
@@ -231,9 +239,9 @@ two always stay in sync."
   (cdr (assoc key classroom-score-points)))
 
 (defun classroom--grade-prompt ()
-  "Return the grading prompt, best level first, with point values.
+  "Return the complete multi-line grading prompt.
 Lines are ordered: highest-scoring answer first, lowest last, then
-无回答, 挂起 and 取消."
+无回答, 挂起 and 取消.  The full menu is 11 lines tall."
   (let ((lines (mapcar
                 (lambda (pair)
                   (let ((key (car pair)))
@@ -243,9 +251,13 @@ Lines are ordered: highest-scoring answer first, lowest last, then
                             (or (classroom-score-level-points key) 0))))
                 (reverse classroom-score-levels))))
     (mapconcat #'identity
-               (append lines
-                       '("a 挂起（未到课，推迟到下次）"
-                         "c 取消本次提问"))
+               (append '("=== 评分选项 ===")
+                       lines
+                       '(""
+                         "a 挂起（未到课，推迟到下次）"
+                         "c 取消本次提问"
+                         ""
+                         "评分: "))
                "\n")))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -570,8 +582,10 @@ on a timer so the UI stays responsive; when it finishes,
   (redisplay)
   (let* ((keys (mapcar #'car (reverse classroom-score-levels)))
          (choices (append (mapcar (lambda (k) (string-to-char k)) keys) '(?a ?c)))
-         (choice (read-char-choice (format "%s\n评分: " (classroom--grade-prompt))
-                                   choices)))
+         ;; Let the minibuffer grow so the full multi-line menu is shown.
+         (max-mini-window-height classroom-grade-menu-max-height)
+         (read-char-choice-use-read-key nil)
+         (choice (read-char-choice (classroom--grade-prompt) choices)))
     (redisplay)
     (cond ((eq choice ?c) 'cancel)
           ((eq choice ?a) 'hang)

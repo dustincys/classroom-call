@@ -148,8 +148,10 @@
 
 (ert-deftest classroom-grade-prompt-order-and-scores ()
   (let ((prompt (classroom--grade-prompt)))
-    ;; Best level first, worst last, then 无回答 / 挂起 / 取消.
-    (should (string-match-p "\\`4 " prompt))
+    ;; 10+ line menu: header, best level first, worst last, then
+    ;; 无回答 / 挂起 / 取消.
+    (should (>= (length (split-string prompt "\n")) 11))
+    (should (string-match-p "\\`=== 评分选项 ===" prompt))
     (should (string-match-p "（100分）" prompt))
     (should (string-match-p "（98分）" prompt))
     (should (string-match-p "（80分）" prompt))
