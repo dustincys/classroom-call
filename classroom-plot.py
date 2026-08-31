@@ -119,11 +119,14 @@ def main(json_path, output_path):
         labels += l
     fig.legend(handles, labels,
                loc='lower center', bbox_to_anchor=(0.5, 0.0),
-               ncol=len(handles), borderaxespad=0)
+               ncol=1, borderaxespad=0)
 
     ax1.set_title('各班成绩分布与平均成绩')
-    # 下方预留空间给图例，保证旋转后的 X 轴标签不被图例遮挡
-    plt.tight_layout(rect=[0, 0.12, 1, 1])
+    # 按图例实际高度预留底部空间，保证旋转后的 X 轴标签不被图例遮挡
+    fig.canvas.draw()
+    legend_h_in = fig.legends[0].get_window_extent().height / fig.dpi
+    bottom = legend_h_in / fig.get_size_inches()[1] + 0.03
+    plt.tight_layout(rect=[0, bottom, 1, 1])
     plt.savefig(output_path, dpi=150, bbox_inches='tight')
     print(f"Chart saved to {output_path}")
 
