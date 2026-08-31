@@ -122,10 +122,13 @@ def main(json_path, output_path):
                ncol=1, borderaxespad=0)
 
     ax1.set_title('各班成绩分布与平均成绩')
-    # 按图例实际高度预留底部空间，保证旋转后的 X 轴标签不被图例遮挡
+    # 按图例实际高度调高图片，并预留底部空间，避免遮挡旋转后的 X 轴标签
     fig.canvas.draw()
     legend_h_in = fig.legends[0].get_window_extent().height / fig.dpi
-    bottom = legend_h_in / fig.get_size_inches()[1] + 0.03
+    gap_in = 0.15
+    w_in, h_in = fig.get_size_inches()
+    fig.set_size_inches(w_in, h_in + legend_h_in + gap_in)
+    bottom = (legend_h_in + gap_in) / (h_in + legend_h_in + gap_in)
     plt.tight_layout(rect=[0, bottom, 1, 1])
     plt.savefig(output_path, dpi=150, bbox_inches='tight')
     print(f"Chart saved to {output_path}")
