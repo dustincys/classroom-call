@@ -111,18 +111,19 @@ def main(json_path, output_path):
     ax2.set_ylabel('成绩 (分数)', color='red')
     ax2.tick_params(axis='y', labelcolor='red')
     ax2.set_ylim(0, 100)
-    # 合并两个轴的图例，放在绘图区右侧，避免遮挡旋转后的 X 轴标签
+    # 合并两个轴的图例，放在图下方（X 轴标签之下），避免遮挡
     handles, labels = [], []
     for a in (ax1, ax2):
         h, l = a.get_legend_handles_labels()
         handles += h
         labels += l
-    ax1.legend(handles, labels,
-               loc='upper left', bbox_to_anchor=(1.02, 1.0), borderaxespad=0)
+    fig.legend(handles, labels,
+               loc='lower center', bbox_to_anchor=(0.5, 0.0),
+               ncol=len(handles), borderaxespad=0)
 
     ax1.set_title('各班成绩分布与平均成绩')
-    # 右侧预留空间给图例，下方预留空间给旋转后的 X 轴标签
-    plt.tight_layout(rect=[0, 0, 0.78, 1])
+    # 下方预留空间给图例，保证旋转后的 X 轴标签不被图例遮挡
+    plt.tight_layout(rect=[0, 0.12, 1, 1])
     plt.savefig(output_path, dpi=150, bbox_inches='tight')
     print(f"Chart saved to {output_path}")
 
