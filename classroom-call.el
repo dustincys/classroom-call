@@ -2,7 +2,7 @@
 ;; Copyright (c) 2026
 ;; Author: YanshuoChu
 ;; Maintainer: YanshuoChu
-;; Version: 1.1.0
+;; Version: 1.2.0
 ;; Package-Requires: ((emacs "27.1"))
 ;; URL: https://github.com/dustincys/classroom-call
 ;; Keywords: classroom, education, org, tts
@@ -10,9 +10,9 @@
 ;;; Commentary:
 
 ;; A classroom random call system for Emacs: randomly picks students
-;; from a pool, announces names and grades via Edge-TTS, records
-;; grades in Org mode, renders per-class statistics charts, and
-;; exports grades to CSV.
+;; from a pool, lets students volunteer to answer, announces names and
+;; grades via Edge-TTS, records grades in Org mode, renders per-class
+;; statistics charts, and exports grades to CSV.
 ;;
 ;; Main entry point: `classroom-start'.  Inside the *Classroom Call*
 ;; buffer, `classroom-mode' provides single-key commands (see
@@ -1000,12 +1000,82 @@ Records the call as 挂起 in the org file and history."
     (display-buffer (current-buffer))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Volunteer Answer
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defun classroom-select-student ()
+  "Prompt for a student, matching by name, pinyin or ID.
+Uses `completing-read' so it integrates with Helm in Spacemacs and
+falls back to the default completion UI elsewhere.  Returns the
+selected student plist, or signals on empty input."
+  (unless classroom-students
+    (user-error "没有学生名单，请先加载学生名单"))
+  (let* ((alist (mapcar (lambda (s) (cons (classroom-student-line s) s))
+                        classroom-students))
+         (choice (completing-read
+                  (format "查找学生（姓名 / 学号，共 %d 人）: "
+                          (length classroom-students))
+                  alist nil t)))
+    (cdr (assoc choice alist))))
+
+(defun classroom--student-answered-this-round-p (id)
+  "Return non-nil if student ID has a numeric grade in the current round.
+A postponed (挂起) record does not count as an answer."
+  (cl-some (lambda (h)
+             (and (equal (plist-get h :id) id)
+                  (eql (plist-get h :round) classroom-round)
+                  (classroom-score-level-key (plist-get h :grade))))
+           classroom-history))
+
+(defun classroom--record-volunteer (student grade)
+  "Record STUDENT's voluntary answer with GRADE for the current round.
+Removes the student from the draw pool so they are not randomly called
+again this round, clears any earlier postponement, and leaves existing
+records untouched so CSV export can take the highest grade."
+  (let* ((id (plist-get student :id))
+         (already (classroom--student-answered-this-round-p id)))
+    (classroom-save-record student grade)
+    (classroom-add-history student grade)
+    (setq classroom-current-pool
+          (cl-remove-if (lambda (s) (equal (plist-get s :id) id))
+                        classroom-current-pool))
+    (setq classroom-unanswered-pool
+          (cl-remove-if (lambda (s) (equal (plist-get s :id) id))
+                        classroom-unanswered-pool))
+    (classroom-save-state)
+    (classroom-speak-grade grade)
+    (if already
+        (message "%s 本轮第二次回答 -> %s（导出取最高分）"
+                 (classroom-student-line student) grade)
+      (message "%s 主动回答 -> %s" (classroom-student-line student) grade))))
+
+(defun classroom-volunteer-answer ()
+  "Record a student's voluntary answer for the current round.
+Prompts for the student (by name or ID) via the completion menu, shows
+the grading menu, then records the grade.  A student not yet called
+this round is marked as answered; a second answer in the same round is
+recorded alongside the first, and CSV export keeps the highest grade."
+  (interactive)
+  (classroom--check-record-savable)
+  (let ((student (classroom-select-student)))
+    (classroom-render (classroom-format-student student t) t)
+    (let ((grade (classroom-grade-student)))
+      (cond
+       ((eq grade 'cancel)
+        (message "已取消主动回答，未记录"))
+       ((eq grade 'hang)
+        (message "已取消主动回答，未记录"))
+       (t
+        (classroom--record-volunteer student grade))))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Keymap & Mode
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defvar classroom-mode-map
   (let ((map (make-sparse-keymap)))
     (define-key map (kbd "c") #'classroom-call)
+    (define-key map (kbd "v") #'classroom-volunteer-answer)
     (define-key map (kbd "s") #'classroom-show-statistics)
     (define-key map (kbd "p") #'classroom-show-pool)
     (define-key map (kbd "t") #'classroom-precache-tts)
@@ -1031,7 +1101,9 @@ Records the call as 挂起 in the org file and history."
 (defun classroom-export-csv (&optional output-file)
   "Export grades from `classroom-org-file' to CSV.
 Columns: 姓名,学号,班级,Round1,Round2,... with numeric grades 0-4.
-If OUTPUT-FILE is not provided, use `classroom-export-csv-default-file'."
+If a student answered more than once in the same round, the highest
+grade is exported.  If OUTPUT-FILE is not provided, use
+`classroom-export-csv-default-file'."
   (interactive (list (read-file-name "导出 CSV 到: "
                                      (file-name-directory classroom-export-csv-default-file)
                                      nil nil
@@ -1089,7 +1161,12 @@ If OUTPUT-FILE is not provided, use `classroom-export-csv-default-file'."
                    (grades-by-round (make-hash-table :test 'eql)))
               (dolist (r records)
                 (when (equal (plist-get r :id) id)
-                  (puthash (plist-get r :round) (plist-get r :grade) grades-by-round)))
+                  (let* ((round-num (plist-get r :round))
+                         (grade (plist-get r :grade))
+                         (existing (gethash round-num grades-by-round)))
+                    (puthash round-num
+                             (if existing (max existing grade) grade)
+                             grades-by-round))))
               (insert (mapconcat #'classroom--csv-escape (list name id group) ","))
               (dotimes (i max-round)
                 (let ((round-num (1+ i)))

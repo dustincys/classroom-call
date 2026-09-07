@@ -7,11 +7,12 @@ The package is fetched automatically from GitHub — no manual clone needed.
 
 * Features
 - Random student selection with rolling animation
+- Voluntary (active) student answering with Helm search by name or ID
 - TTS voice announcements via Microsoft Edge TTS
 - Five-level grading rubric (0–4)
 - Org mode records for all calls and grades
 - Statistics charts per class (matplotlib)
-- CSV export for spreadsheet analysis
+- CSV export for spreadsheet analysis (highest grade per round)
 - Persistent state across Emacs restarts
 
 * Prerequisites
@@ -91,6 +92,7 @@ Override any variable via layer variables or ~:variables~ in
 |-------------+-----------------------------+------------------------------------------|
 | ~SPC a c s~ | ~classroom-start~           | Start / resume the classroom system      |
 | ~SPC a c c~ | ~classroom-call~            | Call on a random student                 |
+| ~SPC a c v~ | ~classroom-volunteer-answer~ | Record a student's voluntary answer      |
 | ~SPC a c p~ | ~classroom-show-pool~       | Show remaining students in the pool      |
 | ~SPC a c S~ | ~classroom-show-statistics~ | Show statistics and grade chart          |
 | ~SPC a c t~ | ~classroom-precache-tts~    | Pre-generate all TTS audio caches        |
@@ -108,6 +110,7 @@ single-key shortcuts (no leader prefix needed):
 | Key | Command                     |
 |-----+-----------------------------|
 | ~c~ | ~classroom-call~            |
+| ~v~ | ~classroom-volunteer-answer~ |
 | ~s~ | ~classroom-show-statistics~ |
 | ~p~ | ~classroom-show-pool~       |
 | ~t~ | ~classroom-precache-tts~    |

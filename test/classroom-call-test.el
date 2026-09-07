@@ -230,5 +230,69 @@
   (should-not (classroom--ascii-name-p "张三"))
   (should (string= (classroom-name-pinyin "James Anderson") "James Anderson")))
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Volunteer answer
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(ert-deftest classroom-student-answered-this-round-p ()
+  (setq classroom-round 2
+        classroom-history
+        (list (list :id "1" :round 2 :grade (classroom-score-level-label "3"))
+              (list :id "2" :round 2 :grade "挂起")
+              (list :id "1" :round 1 :grade (classroom-score-level-label "0"))))
+  (should (classroom--student-answered-this-round-p "1"))
+  ;; 挂起 (postponed) has no numeric grade, so it does not count.
+  (should-not (classroom--student-answered-this-round-p "2"))
+  (should-not (classroom--student-answered-this-round-p "3")))
+
+(ert-deftest classroom-record-volunteer-marks-answered ()
+  (let ((org (make-temp-file "classroom-record-" nil ".org"))
+        (state (make-temp-file "classroom-state-" nil ".el")))
+    (unwind-protect
+        (progn
+          (setq classroom-org-file org
+                classroom-state-file state
+                classroom-enable-tts nil
+                classroom-students '((:id "1" :name "A" :pinyin "A" :group "1班")
+                                     (:id "2" :name "B" :pinyin "B" :group "1班"))
+                classroom-current-pool (copy-tree classroom-students)
+                classroom-history nil
+                classroom-unanswered-pool nil
+                classroom-round 1)
+          (classroom--record-volunteer (car classroom-students)
+                                       (classroom-score-level-label "4"))
+          ;; removed from the draw pool (marked as answered)
+          (should (= (length classroom-current-pool) 1))
+          (should (equal (plist-get (car classroom-current-pool) :id) "2"))
+          ;; recorded in history
+          (should (= (length classroom-history) 1))
+          (should (equal (plist-get (car classroom-history) :grade)
+                         (classroom-score-level-label "4"))))
+      (delete-file org)
+      (delete-file state))))
+
+(ert-deftest classroom-export-csv-takes-max-per-round ()
+  (let ((org (make-temp-file "classroom-record-" nil ".org"))
+        (csv (make-temp-file "classroom-grades-" nil ".csv"))
+        (student '(:id "1" :name "A" :pinyin "A" :group "1班")))
+    (unwind-protect
+        (progn
+          (setq classroom-org-file org
+                classroom-round 1)
+          (classroom-save-record student (classroom-score-level-label "3"))
+          (classroom-save-record student (classroom-score-level-label "1"))
+          (classroom-export-csv csv)
+          (with-temp-buffer
+            (insert-file-contents csv)
+            (goto-char (point-min))
+            (forward-line 1)                  ; skip the header row
+            (let ((line (buffer-substring-no-properties
+                         (line-beginning-position) (line-end-position))))
+              ;; A,1,1班,<max grade>
+              (should (string-match-p ",3$" line))
+              (should-not (string-match-p ",1$" line)))))
+      (ignore-errors (delete-file org))
+      (ignore-errors (delete-file csv)))))
+
 (provide 'classroom-call-test)
 ;;; classroom-call-test.el ends here

@@ -32,6 +32,7 @@
 ## 功能特性
 
 - **随机点名** — 从学生池中随机抽取学生，配合滚动动画，增强课堂互动性
+- **学生主动回答** — 学生报上姓名或学号后，通过搜索菜单（Spacemacs 中为 Helm）查找并评分记录
 - **TTS 语音播报** — 使用 Edge-TTS 将学生姓名和评分结果朗读出来，支持缓存
 - **五级评分制** — 内置 0–4 分评分标准，兼顾回答正确性与逻辑表达能力
 - **多轮次支持** — 支持多轮点名，每轮学生顺序随机打乱
@@ -132,6 +133,14 @@ id,name,group
 4. 如启用了 TTS，系统会用中文朗读"请 XXX 回答问题"
 5. 等待教师输入评分（0–4）、挂起（a）或取消（c）
 
+### 学生主动回答
+
+1. 学生举手后报上自己的姓名或学号
+2. 按下 `v`（`classroom-volunteer-answer`，或全局 `SPC a c v`）
+3. 在弹出的搜索菜单中输入姓名或学号，找到该学生后回车
+4. 弹出评分菜单，输入 `0`–`4` 评分（`c` 取消本次记录）
+5. 若该学生本轮尚未被点到，则记录其回答并移出本轮点名池；若已被点到，则记录第二次回答，导出 CSV 时本轮取最高分
+
 ### 评分标准
 
 | 按键 | 等级（分数） | 描述 |
@@ -151,6 +160,7 @@ id,name,group
 | 按键 | 命令 | 说明 |
 |------|------|------|
 | `c` | `classroom-call` | 开始点名 |
+| `v` | `classroom-volunteer-answer` | 学生主动回答并评分记录 |
 | `s` | `classroom-show-statistics` | 显示统计信息和成绩分布图 |
 | `p` | `classroom-show-pool` | 显示当前轮次剩余学生列表 |
 | `t` | `classroom-precache-tts` | 预生成全部 TTS 语音缓存 |
@@ -180,7 +190,7 @@ id,name,group
 ...
 ```
 
-每轮的成绩以数字（0–4）表示，未参与轮次留空。适用于 Excel / Google Sheets 进一步分析。
+每轮的成绩以数字（0–4）表示，未参与轮次留空；同一轮内学生若多次回答，导出该轮最高分。适用于 Excel / Google Sheets 进一步分析。
 
 ---
 
@@ -314,6 +324,7 @@ An Emacs extension for randomly calling on students in class, with TTS voice ann
 ## Features
 
 - **Random Student Selection** — Randomly picks students from a pool with a rolling animation for classroom engagement
+- **Voluntary Answering** — Students report their name or ID; search (via Helm in Spacemacs) and grade them on the spot
 - **TTS Voice Announcements** — Uses Microsoft Edge TTS to speak student names and grades aloud, with caching
 - **Five-Level Grading** — Built-in 0–4 grading rubric covering both answer correctness and logical reasoning
 - **Multi-Round Support** — Supports multiple rounds of questioning with reshuffled order each round
@@ -414,6 +425,14 @@ The default file is `classroom-default-students-file` (`students.csv` under `use
 4. If TTS is enabled, the system speaks "Please, [Name], answer the question" in Chinese
 5. The teacher enters a grade (0–4), postpones an absent student (a), or cancels (c)
 
+### Voluntary Answering
+
+1. A student raises their hand and reports their name or student ID
+2. Press `v` (`classroom-volunteer-answer`, or `SPC a c v` globally)
+3. Type the name or ID in the search menu (Helm in Spacemacs) and pick the student
+4. Enter a grade `0`–`4` in the grading menu (`c` cancels without recording)
+5. If the student was not yet called this round, their answer is recorded and they leave the round's pool; if already called, a second answer is recorded and CSV export keeps the highest grade of the round
+
 ### Grading Rubric
 
 | Key | Level (points) | Description |
@@ -433,6 +452,7 @@ The following shortcuts are available in the `*Classroom Call*` buffer (provided
 | Key | Command | Description |
 |-----|---------|-------------|
 | `c` | `classroom-call` | Call on a student |
+| `v` | `classroom-volunteer-answer` | Record a student's voluntary answer |
 | `s` | `classroom-show-statistics` | Show statistics and grade distribution chart |
 | `p` | `classroom-show-pool` | Display remaining students in the current round |
 | `t` | `classroom-precache-tts` | Pre-generate all TTS voice caches |
@@ -462,7 +482,7 @@ Run `M-x classroom-export-csv` to export all call records as CSV:
 ...
 ```
 
-Each round's grade is represented as a number (0–4). Unattended rounds are left blank. Suitable for further analysis in Excel / Google Sheets.
+Each round's grade is represented as a number (0–4). Unattended rounds are left blank; when a student answered more than once in a round, the highest grade is exported. Suitable for further analysis in Excel / Google Sheets.
 
 ---
 

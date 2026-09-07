@@ -10,6 +10,7 @@
 ;;
 ;;   SPC a c s  →  classroom-start           启动课堂系统 / 恢复状态
 ;;   SPC a c c  →  classroom-call            开始点名（随机抽取学生）
+;;   SPC a c v  →  classroom-volunteer-answer 学生主动回答问题并评分
 ;;   SPC a c p  →  classroom-show-pool       显示剩余学生池
 ;;   SPC a c S  →  classroom-show-statistics 显示统计与成绩分布图
 ;;   SPC a c t  →  classroom-precache-tts    预生成全部 TTS 缓存
@@ -22,6 +23,7 @@
 (spacemacs/set-leader-keys
   "acs"  'classroom-start
   "acc"  'classroom-call
+  "acv"  'classroom-volunteer-answer
   "acp"  'classroom-show-pool
   "acS"  'classroom-show-statistics
   "act"  'classroom-precache-tts
@@ -37,6 +39,7 @@
 ;; single-key shortcuts (no leader prefix needed):
 ;;
 ;;   c  →  classroom-call            点名
+;;   v  →  classroom-volunteer-answer 学生主动回答并评分
 ;;   s  →  classroom-show-statistics 统计
 ;;   p  →  classroom-show-pool       查看剩余学生
 ;;   t  →  classroom-precache-tts    预生成 TTS

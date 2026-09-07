@@ -63,6 +63,7 @@
         (make-directory classroom-tts-cache-dir t)))
     :commands (
                classroom-call
+               classroom-volunteer-answer
                classroom-start
                classroom-show-statistics
                classroom-show-pool
