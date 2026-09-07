@@ -49,13 +49,12 @@ def main(json_path, output_path):
     ax1.set_xticks(x + width * (n_bars - 1) / 2)
     # 若班级名称较长，自动旋转标签，避免文字重叠
     max_label_len = max((len(str(c)) for c in classes), default=0)
-    if max_label_len > 14:
-        rotation, ha = 90, 'center'
-    elif max_label_len > 4:
-        rotation, ha = 45, 'right'
-    else:
-        rotation, ha = 0, 'center'
-    ax1.set_xticklabels(classes, rotation=rotation, ha=ha)
+    ax1.set_xticklabels(
+        classes,
+        rotation=45,
+        ha='right',
+        rotation_mode='anchor'
+    )
     ax1.set_ylabel('次数')
 
     # ---------- 分数映射（来自 JSON） ----------
