@@ -19,6 +19,7 @@
 ;;   SPC a c l  →  classroom-load-csv        加载学生名单 CSV
 ;;   SPC a c e  →  classroom-export-csv      导出成绩 CSV
 ;;   SPC a c r  →  classroom-load-state      手动恢复课堂状态
+;;   SPC a c R  →  classroom-regrade-last    重新给上一次回答评分
 
 (spacemacs/set-leader-keys
   "acs"  'classroom-start
@@ -31,7 +32,8 @@
   "acC"  'classroom-clear-tts-cache
   "acl"  'classroom-load-csv
   "ace"  'classroom-export-csv
-  "acr"  'classroom-load-state)
+  "acr"  'classroom-load-state
+  "acR"  'classroom-regrade-last)
 
 ;; ── classroom-mode local keybindings ──
 ;;
@@ -40,6 +42,7 @@
 ;;
 ;;   c  →  classroom-call            点名
 ;;   v  →  classroom-volunteer-answer 学生主动回答并评分
+;;   r  →  classroom-regrade-last    重新给上一次回答评分
 ;;   s  →  classroom-show-statistics 统计
 ;;   p  →  classroom-show-pool       查看剩余学生
 ;;   t  →  classroom-precache-tts    预生成 TTS

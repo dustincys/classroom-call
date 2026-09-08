@@ -328,6 +328,12 @@ Wrap the name in >>> ... <<< when HIGHLIGHT is non-nil."
           (plist-get student :id)
           (plist-get student :group)))
 
+(defun classroom--find-student-by-id (id)
+  "Return the student plist whose :id equals ID, or nil."
+  (cl-find id classroom-students
+           :key (lambda (s) (plist-get s :id))
+           :test #'equal))
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; CSV Loading
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -359,12 +365,11 @@ Wrap the name in >>> ... <<< when HIGHLIGHT is non-nil."
     (push field fields)
     (mapcar #'string-trim (nreverse fields))))
 
-(defun classroom-load-csv (file)
-  "Load students from CSV FILE (columns: id,name,group)."
-  (interactive (list (read-file-name "CSV file: "
-                                     (file-name-directory classroom-default-students-file)
-                                     nil nil
-                                     (file-name-nondirectory classroom-default-students-file))))
+(defun classroom--read-students-csv (file)
+  "Return a list of student plists parsed from CSV FILE.
+The CSV must have the columns id,name,group.  Pinyin is computed for
+Chinese names via `classroom--pinyin-batch' (falling back to the raw
+name when the conversion is unavailable)."
   (unless (file-readable-p file)
     (user-error "无法读取文件 %s" file))
   (let ((rows nil))
@@ -384,11 +389,18 @@ Wrap the name in >>> ... <<< when HIGHLIGHT is non-nil."
         (forward-line 1)))
     (setq rows (nreverse rows))
     (let ((pinyins (classroom--pinyin-batch (mapcar #'cadr rows))))
-      (setq classroom-students
-            (cl-mapcar (lambda (row py)
-                         `(:id ,(nth 0 row) :name ,(nth 1 row)
-                               :pinyin ,py :group ,(nth 2 row)))
-                       rows pinyins))))
+      (cl-mapcar (lambda (row py)
+                   `(:id ,(nth 0 row) :name ,(nth 1 row)
+                         :pinyin ,py :group ,(nth 2 row)))
+                 rows pinyins))))
+
+(defun classroom-load-csv (file)
+  "Load students from CSV FILE (columns: id,name,group)."
+  (interactive (list (read-file-name "CSV file: "
+                                     (file-name-directory classroom-default-students-file)
+                                     nil nil
+                                     (file-name-nondirectory classroom-default-students-file))))
+  (setq classroom-students (classroom--read-students-csv file))
   (classroom-reset-pool)
   (classroom-save-state)
   (message "Loaded %d students" (length classroom-students)))
@@ -497,6 +509,100 @@ on first load."
       (classroom-save-state)                  ; persist the merge immediately
       (message "课堂状态已恢复"))))
 
+(defun classroom-recover-state ()
+  "Rebuild `classroom-state-file' from the Org record and the student CSV.
+Use this when the state file is corrupted or out of sync (for example
+after a wrong grade was hand-edited in the record file).  The Org
+record is treated as authoritative: history, the current round, the
+draw pool and the postponed (挂起) list are recomputed from it, and the
+roster is reloaded from the CSV."
+  (interactive)
+  (classroom--check-record-savable)
+  ;; Keep previously-known pinyin as a fallback: when the pinyin helper
+  ;; is unavailable the CSV reload yields the raw name, so reuse the old
+  ;; state's correct pinyin instead of degrading the roster.
+  (let ((old-pinyin (make-hash-table :test 'equal)))
+    (dolist (s (plist-get (classroom--read-state-data) :students))
+      (puthash (plist-get s :id) (plist-get s :pinyin) old-pinyin))
+    ;; 1. Roster (CSV).
+    (let ((csv-file classroom-default-students-file))
+      (unless (file-readable-p csv-file)
+        (setq csv-file
+              (read-file-name "学生名单 CSV 文件: " nil nil t
+                              (file-name-nondirectory classroom-default-students-file))))
+      (setq classroom-students (classroom--read-students-csv csv-file)))
+    ;; 2. Records (oldest first) and current round.
+    (let* ((records (classroom--parse-record-file))
+           (round (if records
+                      (cl-loop for r in records maximize (plist-get r :round))
+                    1))
+           (pinyin-of (make-hash-table :test 'equal)))
+      (dolist (r records)
+        (puthash (plist-get r :id) (plist-get r :pinyin) pinyin-of))
+      ;; 3. Keep the roster complete and repair pinyin: the record's
+      ;;    pinyin wins, then the old state's, then the CSV conversion.
+      (setq classroom-students
+            (mapcar (lambda (s)
+                      (let* ((id (plist-get s :id))
+                             (name (plist-get s :name))
+                             (new (gethash id pinyin-of))
+                             (old (gethash id old-pinyin))
+                             (cur (plist-get s :pinyin)))
+                        (cond
+                         (new (plist-put s :pinyin new))
+                         ((and (not (classroom--ascii-name-p name))
+                               (equal cur name)
+                               old)
+                          (plist-put s :pinyin old))
+                         (t s))))
+                    classroom-students))
+      (dolist (r records)
+        (unless (classroom--find-student-by-id (plist-get r :id))
+          (setq classroom-students
+                (append classroom-students
+                        (list (list :id (plist-get r :id)
+                                    :name (plist-get r :name)
+                                    :pinyin (plist-get r :pinyin)
+                                    :group (plist-get r :group)))))))
+    ;; 4. History (newest first).
+    (setq classroom-history
+          (mapcar (lambda (r)
+                    (list :id (plist-get r :id)
+                          :name (plist-get r :name)
+                          :pinyin (plist-get r :pinyin)
+                          :group (plist-get r :group)
+                          :grade (plist-get r :grade)
+                          :round (plist-get r :round)
+                          :time (plist-get r :time)))
+                  (reverse records)))
+    ;; 5. Latest record per student + ids answered in the current round.
+    (let ((latest (make-hash-table :test 'equal))
+          (answered (make-hash-table :test 'equal)))
+      (dolist (r records)
+        (puthash (plist-get r :id) r latest)
+        (when (eql (plist-get r :round) round)
+          (puthash (plist-get r :id) t answered)))
+      ;; 6. Postponed (挂起): students whose latest record is still 挂起.
+      (setq classroom-unanswered-pool
+            (cl-remove-if-not
+             (lambda (s)
+               (let ((r (gethash (plist-get s :id) latest)))
+                 (and r (equal (plist-get r :grade) "挂起"))))
+             classroom-students))
+      ;; 7. Pool: students without any record in the current round.
+      (setq classroom-current-pool
+            (classroom-shuffle
+             (cl-remove-if (lambda (s) (gethash (plist-get s :id) answered))
+                           classroom-students))))
+    (setq classroom-round round
+          classroom-last-cancelled-id nil))
+  (classroom-save-state)
+  (message "已从记录重建状态：第 %d 轮，剩余 %d 人，历史 %d 条，挂起 %d 人"
+           classroom-round
+           (length classroom-current-pool)
+           (length classroom-history)
+           (length classroom-unanswered-pool))))
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; UI
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -596,6 +702,54 @@ on a timer so the UI stays responsive; when it finishes,
           ((eq choice ?a) 'hang)
           (t (classroom-score-level-label (char-to-string choice))))))
 
+(defun classroom-regrade-last ()
+  "Re-grade the most recent answer (fix a wrong score or accidental 挂起).
+Removes the last record from the Org file and history, shows the
+grading menu again, then re-applies the new grade.  Bound to `r' in
+`classroom-mode'."
+  (interactive)
+  (classroom--check-record-savable)
+  (unless classroom-history
+    (user-error "没有可重新评分的记录"))
+  (let* ((entry (car classroom-history))
+         (id (plist-get entry :id))
+         (student (or (classroom--find-student-by-id id)
+                      (list :id id
+                            :name (plist-get entry :name)
+                            :pinyin (plist-get entry :pinyin)
+                            :group (plist-get entry :group)))))
+    ;; Undo the previous record and its side effects.
+    (classroom--remove-last-record)
+    (setq classroom-history (cdr classroom-history))
+    (setq classroom-unanswered-pool
+          (cl-remove-if (lambda (s) (equal (plist-get s :id) id))
+                        classroom-unanswered-pool))
+    ;; Prompt again and re-apply.
+    (classroom-render (classroom-format-student student t) t)
+    (classroom-speak-current-student student)
+    (let ((grade (classroom-grade-student)))
+      (cond
+       ((eq grade 'cancel)
+        ;; Undo the question entirely: put the student back in the pool.
+        (setq classroom-last-cancelled-id id)
+        (setq classroom-current-pool
+              (classroom-shuffle (append classroom-current-pool (list student))))
+        (classroom-save-state)
+        (message "已取消该次提问，%s 已放回点名池"
+                 (classroom-student-line student)))
+       ((eq grade 'hang)
+        (classroom--hang-student student))
+       (t
+        (classroom-save-record student grade)
+        (classroom-add-history student grade)
+        (setq classroom-unanswered-pool
+              (cl-remove-if (lambda (s) (equal (plist-get s :id) id))
+                            classroom-unanswered-pool))
+        (classroom-save-state)
+        (classroom-speak-grade grade)
+        (message "%s -> %s（已重新评分）"
+                 (classroom-student-line student) grade))))))
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Org Record
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -621,6 +775,69 @@ on a timer so the UI stays responsive; when it finishes,
   (let ((buf (get-file-buffer classroom-org-file)))
     (when (and buf (buffer-modified-p buf))
       (user-error "记录文件 %s 有未保存修改，请先保存该缓冲区" classroom-org-file))))
+
+(defun classroom--normalize-record-time (raw)
+  "Convert a record TIME string to \"%Y-%m-%d %H:%M:%S\" form.
+The Org record stores time as \"[YYYY-MM-DD Ddd HH:MM:SS]\"; the
+history stores it without brackets and day-of-week."
+  (if (string-match "\\[\\([0-9]\\{4\\}-[0-9]\\{2\\}-[0-9]\\{2\\}\\) [^ ]+ \\([0-9:]+\\)\\]" raw)
+      (concat (match-string 1 raw) " " (match-string 2 raw))
+    raw))
+
+(defun classroom--parse-record-file ()
+  "Parse `classroom-org-file' into a list of record plists, oldest first.
+Each plist has the keys :round :id :name :pinyin :group :grade :time."
+  (unless (file-exists-p classroom-org-file)
+    (user-error "记录文件 %s 不存在" classroom-org-file))
+  (let ((records nil))
+    (with-temp-buffer
+      (insert-file-contents classroom-org-file)
+      (org-mode)
+      (org-element-map (org-element-parse-buffer) 'headline
+        (lambda (hl)
+          (let ((raw-value (org-element-property :raw-value hl)))
+            (when (string-match "第\\([0-9]+\\)轮" raw-value)
+              (let ((round (string-to-number (match-string 1 raw-value)))
+                    (id (org-element-property :ID hl))
+                    (name (org-element-property :NAME hl))
+                    (pinyin (org-element-property :PINYIN hl))
+                    (group (org-element-property :GROUP hl))
+                    (grade (org-element-property :GRADE hl))
+                    (raw-time (org-element-property :TIME hl)))
+                (when (and id name group grade)
+                  (push (list :round round
+                              :id id
+                              :name name
+                              :pinyin (or pinyin "")
+                              :group group
+                              :grade grade
+                              :time (classroom--normalize-record-time (or raw-time "")))
+                        records))))))))
+    (nreverse records)))
+
+(defun classroom--remove-last-record ()
+  "Remove the most recent record headline from `classroom-org-file'.
+Returns non-nil when a record was removed."
+  (unless (file-exists-p classroom-org-file)
+    (user-error "记录文件 %s 不存在" classroom-org-file))
+  (let ((removed nil))
+    (with-temp-buffer
+      (insert-file-contents classroom-org-file)
+      (goto-char (point-max))
+      (when (re-search-backward "^\\* " nil t)
+        (setq removed t)
+        (beginning-of-line)
+        (delete-region (point) (point-max))
+        ;; Normalize the trailing newlines so the file keeps the same
+        ;; shape as one written by `classroom-save-record'.
+        (goto-char (point-max))
+        (unless (bobp)
+          (while (and (not (bobp)) (eq (char-before) ?\n))
+            (delete-char -1))
+          (insert "\n\n")))
+      (let ((coding-system-for-write 'utf-8))
+        (write-region (point-min) (point-max) classroom-org-file nil 'silent)))
+    removed))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; History
@@ -1076,6 +1293,7 @@ recorded alongside the first, and CSV export keeps the highest grade."
   (let ((map (make-sparse-keymap)))
     (define-key map (kbd "c") #'classroom-call)
     (define-key map (kbd "v") #'classroom-volunteer-answer)
+    (define-key map (kbd "r") #'classroom-regrade-last)
     (define-key map (kbd "s") #'classroom-show-statistics)
     (define-key map (kbd "p") #'classroom-show-pool)
     (define-key map (kbd "t") #'classroom-precache-tts)

@@ -124,6 +124,8 @@ id,name,group
 | `M-x classroom-start` | 启动课堂系统。如检测到上次状态文件，会询问是否恢复 |
 | `M-x classroom-load-csv` | 手动重新加载学生名单 CSV |
 | `M-x classroom-load-state` | 手动恢复上次保存的课堂状态 |
+| `M-x classroom-recover-state` | 从 `classroom-record.org` 与 `students.csv` 重建状态（修复损坏或不同步的状态文件） |
+| `M-x classroom-regrade-last` | 重新给上一次回答评分（纠正按错的分数或误按的挂起） |
 
 ### 点名流程
 
@@ -153,6 +155,17 @@ id,name,group
 | `a` | 挂起 | 学生未到课，推迟到下次点名 |
 | `c` | 取消 | 取消本次提问（误操作），学生放回池中 |
 
+### 重新评分（纠正误操作）
+
+评分时按错了（例如分数按错，或误按成挂起 `a`）时，按下 `r`
+（`classroom-regrade-last`）即可重新给上一次回答评分：
+
+1. 系统移除 `classroom-record.org` 中最后一条记录，并弹出评分菜单
+2. 重新输入 `0`–`4`、`a`（挂起）或 `c`（取消）：
+   - 输入新分数：覆盖上次记录，并同步更正挂起状态
+   - 输入 `a`：改为挂起，学生进入挂起列表
+   - 输入 `c`：撤销该次提问，学生重新放回点名池
+
 ### 键盘快捷键
 
 在 `*Classroom Call*` 缓冲区中，以下快捷键可用（由 `classroom-mode` 提供）：
@@ -161,6 +174,7 @@ id,name,group
 |------|------|------|
 | `c` | `classroom-call` | 开始点名 |
 | `v` | `classroom-volunteer-answer` | 学生主动回答并评分记录 |
+| `r` | `classroom-regrade-last` | 重新给上一次回答评分 |
 | `s` | `classroom-show-statistics` | 显示统计信息和成绩分布图 |
 | `p` | `classroom-show-pool` | 显示当前轮次剩余学生列表 |
 | `t` | `classroom-precache-tts` | 预生成全部 TTS 语音缓存 |
@@ -232,6 +246,18 @@ id,name,group
 - 挂起（推迟）学生列表
 
 每次评分后自动保存。下次启动时，系统会询问是否恢复上次状态。
+
+### 从记录重建状态
+
+如果 `classroom-state.el` 损坏或与记录不同步，执行 `M-x classroom-recover-state`
+即可根据 `classroom-record.org`（权威数据源）和 `students.csv` 重建：
+
+- 以记录文件中的评分、轮次、时间为准，重建全部历史记录
+- 重新计算当前轮次、点名池（本轮未回答的学生）
+- 重新计算挂起列表：最近一次记录仍为「挂起」的学生视为仍被挂起
+- 重新加载学生名单，并尽量保留原状态中的拼音
+
+重建后自动写回 `classroom-state.el`。
 
 ---
 

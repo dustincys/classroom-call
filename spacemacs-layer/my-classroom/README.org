@@ -101,6 +101,7 @@ Override any variable via layer variables or ~:variables~ in
 | ~SPC a c l~ | ~classroom-load-csv~        | Reload student roster from CSV           |
 | ~SPC a c e~ | ~classroom-export-csv~      | Export grades to CSV                     |
 | ~SPC a c r~ | ~classroom-load-state~      | Manually restore classroom state         |
+| ~SPC a c R~ | ~classroom-regrade-last~    | Re-grade the most recent answer          |
 
 ** classroom-mode local keybindings
 
@@ -111,6 +112,7 @@ single-key shortcuts (no leader prefix needed):
 |-----+-----------------------------|
 | ~c~ | ~classroom-call~            |
 | ~v~ | ~classroom-volunteer-answer~ |
+| ~r~ | ~classroom-regrade-last~    |
 | ~s~ | ~classroom-show-statistics~ |
 | ~p~ | ~classroom-show-pool~       |
 | ~t~ | ~classroom-precache-tts~    |
