@@ -1,3 +1,4 @@
 *.elc
 __pycache__/
 *.pyc
+/test/
