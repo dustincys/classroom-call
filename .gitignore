@@ -1,4 +1,8 @@
 *.elc
 __pycache__/
 *.pyc
-/test/
+
+# Real classroom data — kept locally, never committed.
+/test/classroom-record.org
+/test/classroom-state.el
+/test/students.csv

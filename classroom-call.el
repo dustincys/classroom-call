@@ -418,9 +418,16 @@ name when the conversion is unavailable)."
     (append vec nil)))
 
 (defun classroom-reset-pool ()
-  "Reset pool for a new round."
-  (setq classroom-current-pool
-        (classroom-shuffle classroom-students)))
+  "Reset pool for a new round, excluding postponed (挂起) students.
+Postponed students stay in `classroom-unanswered-pool' and are only put
+back into the draw pool on the next session (`classroom-load-state'),
+not when the round merely advances within the same session."
+  (let ((postponed (mapcar (lambda (s) (plist-get s :id))
+                           classroom-unanswered-pool)))
+    (setq classroom-current-pool
+          (classroom-shuffle
+           (cl-remove-if (lambda (s) (member (plist-get s :id) postponed))
+                         classroom-students)))))
 
 (defun classroom-next-student ()
   "Get next student, starting a new round if needed.
@@ -702,6 +709,32 @@ on a timer so the UI stays responsive; when it finishes,
           ((eq choice ?a) 'hang)
           (t (classroom-score-level-label (char-to-string choice))))))
 
+(defun classroom--reconcile-student (student)
+  "Reconcile STUDENT's pool placement from their current-round history.
+Removes the student from both the draw pool and the postponed list, then
+places them according to the invariant used everywhere else: no record
+this round -> back in the draw pool; latest remaining record is 挂起 ->
+postponed; latest record is a real answer -> out of the pool."
+  (let* ((id (plist-get student :id))
+         (records (cl-remove-if-not
+                   (lambda (h)
+                     (and (equal (plist-get h :id) id)
+                          (eql (plist-get h :round) classroom-round)))
+                   classroom-history)))
+    (setq classroom-current-pool
+          (cl-remove-if (lambda (s) (equal (plist-get s :id) id))
+                        classroom-current-pool))
+    (setq classroom-unanswered-pool
+          (cl-remove-if (lambda (s) (equal (plist-get s :id) id))
+                        classroom-unanswered-pool))
+    (cond
+     ((null records)
+      (setq classroom-current-pool
+            (classroom-shuffle (append classroom-current-pool (list student)))))
+     ((equal (plist-get (car records) :grade) "挂起")
+      (push student classroom-unanswered-pool))
+     (t nil))))
+
 (defun classroom-regrade-last ()
   "Re-grade the most recent answer (fix a wrong score or accidental 挂起).
 Removes the last record from the Org file and history, shows the
@@ -730,12 +763,12 @@ grading menu again, then re-applies the new grade.  Bound to `r' in
     (let ((grade (classroom-grade-student)))
       (cond
        ((eq grade 'cancel)
-        ;; Undo the question entirely: put the student back in the pool.
+        ;; Undo the question entirely; reconcile the student's placement
+        ;; from their remaining records (handles multi-answer correctly).
         (setq classroom-last-cancelled-id id)
-        (setq classroom-current-pool
-              (classroom-shuffle (append classroom-current-pool (list student))))
+        (classroom--reconcile-student student)
         (classroom-save-state)
-        (message "已取消该次提问，%s 已放回点名池"
+        (message "已取消该次提问，%s 已按剩余记录恢复位置"
                  (classroom-student-line student)))
        ((eq grade 'hang)
         (classroom--hang-student student))
@@ -777,9 +810,9 @@ grading menu again, then re-applies the new grade.  Bound to `r' in
       (user-error "记录文件 %s 有未保存修改，请先保存该缓冲区" classroom-org-file))))
 
 (defun classroom--normalize-record-time (raw)
-  "Convert a record TIME string to \"%Y-%m-%d %H:%M:%S\" form.
-The Org record stores time as \"[YYYY-MM-DD Ddd HH:MM:SS]\"; the
-history stores it without brackets and day-of-week."
+  "Convert RAW time string to \"%Y-%m-%d %H:%M:%S\" form.
+The Org record stores RAW as \"[YYYY-MM-DD Ddd HH:MM:SS]\"; the history
+stores it without brackets and day-of-week."
   (if (string-match "\\[\\([0-9]\\{4\\}-[0-9]\\{2\\}-[0-9]\\{2\\}\\) [^ ]+ \\([0-9:]+\\)\\]" raw)
       (concat (match-string 1 raw) " " (match-string 2 raw))
     raw))
